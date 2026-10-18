@@ -50,6 +50,8 @@
 
 ### Fixed
 
+- Fix Windows firmware builds failing with conflicting Arduino core compile actions.
+- Keep SdFat dependency patches compatible with Windows Git line-ending settings.
 - File Transfer choices no longer appear preselected when opened on a touch device.
 - EPUB paragraphs now inherit first-line indentation from HTML and body styles while retaining paragraph-level overrides.
 - Saved clipping lists now show a scrollbar when more clippings are available below the visible rows.

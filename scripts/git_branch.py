@@ -234,9 +234,11 @@ def inject_version(env):
     # Keep changing source identity out of unrelated compile commands.
     if hasattr(env, 'AddBuildMiddleware'):
         def add_build_info_defines(node_env, node):
-            build_env = node_env.Clone()
-            build_env.Append(CPPDEFINES=scoped)
-            return build_env.Object(node)
+            # PioArduino's Windows middleware wrapper ignores registered file
+            # filters and intercepts Object() only on the supplied environment.
+            if not str(node).replace('\\', '/').endswith('src/util/BuildInfo.cpp'):
+                return node
+            return node_env.Object(node, CPPDEFINES=list(node_env.get('CPPDEFINES', [])) + scoped)
         env.AddBuildMiddleware(add_build_info_defines, '*src/util/BuildInfo.cpp')
     else:
         env.Append(CPPDEFINES=scoped)

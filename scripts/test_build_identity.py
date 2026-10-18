@@ -16,7 +16,7 @@ class Env(dict):
         copy = Env(self["PIOENV"])
         copy.defines = list(self.defines)
         return copy
-    def Object(self, node): return (node, self.defines)
+    def Object(self, node, **kwargs): return (node, kwargs.get("CPPDEFINES", self.defines))
     def AddBuildMiddleware(self, callback, pattern): self.middleware.append((callback, pattern))
 
 class BuildIdentityTest(unittest.TestCase):
@@ -34,7 +34,10 @@ class BuildIdentityTest(unittest.TestCase):
                 self.assertEqual(len(env.middleware), 1)
                 callback, pattern = env.middleware[0]
                 self.assertEqual(pattern, "*src/util/BuildInfo.cpp")
-                _, scoped = callback(env, "BuildInfo.cpp")
+                for unrelated in ("ColorFormat.c", "src/main.cpp", r"C:\repo\cores\esp32\ColorFormat.c"):
+                    self.assertEqual(callback(env, unrelated), unrelated)
+                _, scoped = callback(env, "src/util/BuildInfo.cpp")
+                self.assertEqual(callback(env, r"C:\repo\src\util\BuildInfo.cpp")[1], scoped)
                 names = [d[0] for d in env.defines if isinstance(d, tuple)]
                 self.assertNotIn("CROSSINK_GIT_SHA", names)
                 self.assertNotIn("CROSSINK_GIT_DIRTY", names)
