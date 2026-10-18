@@ -2,6 +2,7 @@
 from pathlib import Path
 import runpy
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = runpy.run_path(str(ROOT / "scripts/git_branch.py"))
@@ -20,6 +21,7 @@ class Env(dict):
     def AddBuildMiddleware(self, callback, pattern): self.middleware.append((callback, pattern))
 
 class BuildIdentityTest(unittest.TestCase):
+    @patch("os.name", "posix")
     def test_identity_only_changes_one_compile_environment(self):
         function = MODULE["inject_version"]
         globals_ = function.__globals__
@@ -38,6 +40,10 @@ class BuildIdentityTest(unittest.TestCase):
                     self.assertEqual(callback(env, unrelated), unrelated)
                 _, scoped = callback(env, "src/util/BuildInfo.cpp")
                 self.assertEqual(callback(env, r"C:\repo\src\util\BuildInfo.cpp")[1], scoped)
+                class SourceNode:
+                    def __str__(self): return "BuildInfo.cpp"
+                    def get_abspath(self): return str(ROOT / "src/util/BuildInfo.cpp")
+                self.assertEqual(callback(env, SourceNode())[1], scoped)
                 names = [d[0] for d in env.defines if isinstance(d, tuple)]
                 self.assertNotIn("CROSSINK_GIT_SHA", names)
                 self.assertNotIn("CROSSINK_GIT_DIRTY", names)
@@ -46,5 +52,15 @@ class BuildIdentityTest(unittest.TestCase):
                 captures.append((env.defines, scoped))
             self.assertEqual(captures[0][0], captures[1][0])
             self.assertNotEqual(captures[0][1], captures[1][1])
+
+    @patch("os.name", "nt")
+    def test_windows_identity_avoids_platform_middleware(self):
+        env = Env("x4-pro")
+        MODULE["inject_version"](env)
+        self.assertEqual(env.middleware, [])
+        defines = dict(d for d in env.defines if isinstance(d, tuple))
+        self.assertIn("CROSSINK_GIT_SHA", defines)
+        self.assertIn("CROSSINK_GIT_DIRTY", defines)
+        self.assertIn("1.6.1-x4-pro", defines["CROSSINK_VERSION"])
 
 if __name__ == "__main__": unittest.main()

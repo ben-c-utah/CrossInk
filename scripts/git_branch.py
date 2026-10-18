@@ -232,11 +232,17 @@ def inject_version(env):
         print(f'CrossInk RC build version: {version_string}')
 
     # Keep changing source identity out of unrelated compile commands.
-    if hasattr(env, 'AddBuildMiddleware'):
+    # PioArduino's Windows middleware adapter restores the environment before
+    # deferred compile actions consume per-file CPPDEFINES. Use ordinary build
+    # flags there: changing Git identity may rebuild more files, but stays correct.
+    if os.name == 'nt':
+        env.Append(CPPDEFINES=scoped)
+    elif hasattr(env, 'AddBuildMiddleware'):
         def add_build_info_defines(node_env, node):
             # PioArduino's Windows middleware wrapper ignores registered file
             # filters and intercepts Object() only on the supplied environment.
-            if not str(node).replace('\\', '/').endswith('src/util/BuildInfo.cpp'):
+            source_path = node.get_abspath() if hasattr(node, 'get_abspath') else str(node)
+            if not source_path.replace('\\', '/').endswith('src/util/BuildInfo.cpp'):
                 return node
             return node_env.Object(node, CPPDEFINES=list(node_env.get('CPPDEFINES', [])) + scoped)
         env.AddBuildMiddleware(add_build_info_defines, '*src/util/BuildInfo.cpp')
