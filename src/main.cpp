@@ -11,6 +11,7 @@
 #include <HalDisplay.h>
 #include <HalGPIO.h>
 #include <HalPowerManager.h>
+#include <HalBlePageTurner.h>
 #include <HalStorage.h>
 #include <HalSystem.h>
 #include <HalTiltSensor.h>
@@ -373,6 +374,10 @@ using BootResume = SleepWakePolicy::Resume;
 // device back up against the user's sleep gesture. Never cleared:
 // startDeepSleep() does not return, so a set latch only ends at the wakeup reset.
 static bool deepSleepInProgress = false;
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+static bool bleSleepPending = false;
+static bool bleSleepFromTimeout = false;
+#endif
 
 static void restartWithSilentToken() {
   // Capture the live state for every destination without changing wake preferences.
@@ -1086,6 +1091,11 @@ void mirrorWakeShortPressToNvs() {
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+  bleSleepFromTimeout = fromTimeout;
+  bleSleepPending = !blePageTurner.stop();
+  if (bleSleepPending) return;
+#endif
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
   const bool isQuickResumeSleep =
@@ -1628,6 +1638,13 @@ void loop() {
   // hardware input frame. A shortcut may open an activity that never queries
   // the originating button, so its one-shot release guard must still expire.
   mappedInputManager.update();
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+  if (bleSleepPending) {
+    enterDeepSleep(bleSleepFromTimeout);
+    delay(10);
+    return;
+  }
+#endif
 #ifdef SIMULATOR
   simulatorHomeKeyInput.update();
 #endif
@@ -1672,7 +1689,19 @@ void loop() {
 
   // Notify the active activity before global shortcut and gesture routes consume
   // the input and skip its loop() for this frame.
-  const bool userInputReceived = gpio.wasAnyPressed() || gpio.wasAnyReleased()
+  bool bleInputReceived = false;
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+  const int8_t bleDirection = blePageTurner.poll();
+  if (bleDirection && !buttonShortcutController.isQuickLocked() && !gpio.wasAnyPressed() && !gpio.wasAnyReleased()
+#if CROSSINK_APP_CAP_TOUCH
+      && !gpio.wasTouchActivity()
+#endif
+  ) {
+    bleInputReceived = activityManager.deliverBlePageTurn(bleDirection > 0);
+    if (!bleInputReceived) LOG_INF("BLE", "Arrow ignored: foreground EPUB not ready");
+  }
+#endif
+  const bool userInputReceived = bleInputReceived || gpio.wasAnyPressed() || gpio.wasAnyReleased()
 #if CROSSINK_APP_CAP_TOUCH
                                  || gpio.wasTouchActivity()
 #endif

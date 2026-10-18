@@ -31,6 +31,7 @@
 #include "KeyboardLayoutsActivity.h"
 #include "MappedInputManager.h"
 #include "OpdsServerListActivity.h"
+#include "BleSettingsActivity.h"
 #include "QuickActions.h"
 #include "QuickActionsActivity.h"
 #include "SdCardFontSystem.h"
@@ -1150,6 +1151,19 @@ void SettingsActivity::toggleCurrentSetting() {
         break;
       case SettingAction::OPDSBrowser:
         startActivityForResult(std::make_unique<OpdsServerListActivity>(renderer, mappedInput), resultHandler);
+        break;
+      case SettingAction::Bluetooth:
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+      {
+        // One activity allocation owns the fixed UI/snapshot storage until exit.
+        auto activity = makeUniqueNoThrow<BleSettingsActivity>(renderer, mappedInput);
+        if (!activity) {
+          LOG_ERR("SET", "Failed to allocate Bluetooth settings");
+          break;
+        }
+        startActivityForResult(std::move(activity), resultHandler);
+      }
+#endif
         break;
       case SettingAction::Network:
         startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput, false),

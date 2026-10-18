@@ -9,6 +9,7 @@
 #include <FontCacheManager.h>
 #include <FsHelpers.h>
 #include <HalPowerManager.h>
+#include <HalBlePageTurner.h>
 #include <HalStorage.h>
 #include <Logging.h>
 #include <Memory.h>
@@ -581,6 +582,11 @@ void ActivityManager::loop() {
   }
 
   while (pendingAction != PendingAction::None) {
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+    // Leave the old screen alive while SDK connection waits unwind. USB must
+    // not detach storage/start TinyUSB with the BLE stack still resident.
+    if (pendingActivity && pendingActivity->requiresExclusiveStorageLoop() && !blePageTurner.stop()) return;
+#endif
     if (pendingAction == PendingAction::Pop) {
       RenderLock lock;
 
@@ -824,6 +830,15 @@ void ActivityManager::notifyInputLockChanged(const bool locked) {
 void ActivityManager::notifyUserInput() {
   if (currentActivity) currentActivity->onUserInput();
 }
+
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+bool ActivityManager::deliverBlePageTurn(bool forward) {
+  RenderLock lock(RenderLock::Mode::Try);
+  if (!lock.ownsLock() || pendingAction != PendingAction::None || !currentActivity ||
+      !currentActivity->isEpubReaderActivity() || currentActivity->blocksGlobalInput()) return false;
+  return currentActivity->handleBlePageTurn(forward);
+}
+#endif
 
 void ActivityManager::exitActivity(const RenderLock& lock) {
   // Note: lock must be held by the caller

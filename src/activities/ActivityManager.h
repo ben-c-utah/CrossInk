@@ -196,6 +196,9 @@ class ActivityManager {
   void endGlobalSettingsEdit();
   void notifyInputLockChanged(bool locked);
   void notifyUserInput();
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+  bool deliverBlePageTurn(bool forward);
+#endif
   bool skipLoopDelay() const;
   uint8_t inputPollDelayMs() const;
   std::string getCurrentBookPath() const;

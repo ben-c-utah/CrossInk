@@ -5854,6 +5854,20 @@ void EpubReaderActivity::requestManualPageTurn(const bool isForwardTurn, const c
   pageTurn(isForwardTurn, source);
 }
 
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+bool EpubReaderActivity::handleBlePageTurn(bool forward) {
+  // ActivityManager holds RenderLock. Use the normal manual-turn queue, never
+  // physical button hold time, so a remote tap cannot skip chapters or rotate.
+  if (!epub || !section || lastRenderCompleteMs == 0 || activeFootnotePreview || quickActionsPopup.isActive() ||
+      automaticPageTurnActive || currentSpineIndex >= epub->getSpineItemsCount() ||
+      (endOfBookOptions && endOfBookOptions->menuActive())) return false;
+  onUserInput();
+  backgroundBuildYieldForInput.store(true, std::memory_order_relaxed);
+  requestManualPageTurn(forward, "ble");
+  return true;
+}
+#endif
+
 bool EpubReaderActivity::drainPendingManualPageTurn() {
   finishManualPageTurnBrakeIfReady();
   if (!pendingManualPageTurns.hasPending() || RenderLock::peek() ||

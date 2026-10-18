@@ -10,6 +10,7 @@
 #include <cassert>
 
 #include "HalGPIO.h"
+#include "HalBlePageTurner.h"
 
 HalPowerManager powerManager;  // Singleton instance
 
@@ -68,6 +69,9 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   }
 
   auto wifiMode = WiFi.getMode();
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+  if (blePageTurner.resident()) enabled = false;
+#endif
   if (wifiMode != WIFI_MODE_NULL) {
     // Wifi is active, force disabling power saving
     enabled = false;

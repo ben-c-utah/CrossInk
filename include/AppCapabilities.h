@@ -1,5 +1,10 @@
 #pragma once
 
+// Experimental Windows BLE keyboard page turning is compiled only for X4 Pro.
+#ifndef CROSSINK_APP_CAP_BLE_PAGE_TURNER
+#define CROSSINK_APP_CAP_BLE_PAGE_TURNER 0
+#endif
+
 // The app deliberately has a build-time touch capability, separate from a
 // runtime probe. Button-only images must not retain the touch UI merely because
 // the shared source tree also builds for Sticky.

@@ -67,6 +67,9 @@ class Activity {
   // Called from the main loop as soon as raw input arrives, before a global
   // shortcut or gesture can consume it instead of entering activity loop().
   virtual void onUserInput() {}
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+  virtual bool handleBlePageTurn(bool forward) { return false; }
+#endif
   // Quick Lock may permit one reader-only long-press trigger to unlock. The
   // activity validates that trigger without routing any other normal input.
   virtual bool handleQuickLockUnlock(QuickLockTrigger) { return false; }

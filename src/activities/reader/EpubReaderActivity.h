@@ -524,6 +524,9 @@ class EpubReaderActivity final : public Activity {
   bool isEpubReaderActivity() const override { return true; }
   void onInputLockChanged(bool locked) override;
   void onUserInput() override;
+#if CROSSINK_APP_CAP_BLE_PAGE_TURNER
+  bool handleBlePageTurn(bool forward) override;
+#endif
   bool handleQuickLockUnlock(QuickLockTrigger trigger) override;
   bool canSnapshotForSleepOverlay() const override { return true; }
   bool allowPowerAsConfirmInReaderMode() const override { return quickActionsPopup.isActive(); }
