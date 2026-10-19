@@ -485,7 +485,15 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
                                     const GlobalReadingStats* globalStats, const char* currentChapterTitle) const {
   (void)globalStats;
   (void)currentChapterTitle;
-  const int tileWidth = rect.width - 2 * LyraMetrics::values.contentSidePadding;
+  int sidePadding = LyraMetrics::values.contentSidePadding;
+#if CROSSINK_BLE_LAB
+  if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::LYRA) {
+    // Match the top margin while keeping the existing status line above the
+    // selected card. Both cover-image margins become 42px on portrait X4 Pro.
+    sidePadding = BleLabLayout::coverTop(sidePadding, 0);
+  }
+#endif
+  const int tileWidth = rect.width - 2 * sidePadding;
   const int tileHeight = rect.height;
   const int tileY = rect.y;
   const bool hasContinueReading = !recentBooks.empty();
@@ -497,7 +505,7 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
   // Draw cover image as background if available (inside the box)
   // Only load from SD on first render, then use stored buffer
   if (hasContinueReading) {
-    TouchRegistry::getInstance().add(Rect{LyraMetrics::values.contentSidePadding, tileY, tileWidth,
+    TouchRegistry::getInstance().add(Rect{sidePadding, tileY, tileWidth,
                                           LyraMetrics::values.homeCoverHeight + 2 * hPaddingInSelection},
                                      0, TouchRegistry::Cover);
 
@@ -505,7 +513,7 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
     if (!coverRendered) {
       std::string coverPath = book.coverBmpPath;
       bool hasCover = true;
-      int tileX = LyraMetrics::values.contentSidePadding;
+      int tileX = sidePadding;
       if (coverPath.empty()) {
         hasCover = false;
       } else {
@@ -544,7 +552,7 @@ void LyraTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std:
 
     bool bookSelected = (selectorIndex == 0);
 
-    int tileX = LyraMetrics::values.contentSidePadding;
+    int tileX = sidePadding;
     int textWidth = tileWidth - 2 * hPaddingInSelection - LyraMetrics::values.verticalSpacing - coverWidth;
 
     if (bookSelected) {

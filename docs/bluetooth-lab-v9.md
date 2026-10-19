@@ -97,8 +97,8 @@ For the X4 Pro's 800x480 panel in portrait Home coordinates (480x800):
 
 | Region | Vertical bounds (exclusive bottom) |
 | --- | --- |
-| Full book card | 24?266 (image top 32, left 28) |
-| Seven menu rows, including Settings | 270?588 |
+| Full book card | 34?276 (image top and left both 42) |
+| Seven menu rows, including Settings | 276?594 |
 | Bluetooth Lab heading | 600?624 |
 | Three 142x44 buttons with 6-pixel gaps | 628?672 |
 | Bluetooth/Kobo state | 676?700 |
@@ -118,7 +118,8 @@ without changing update metadata or BLE build flags.
 
 The full 242-pixel card is deliberately retained: Lyra's 226-pixel cover image,
 up-to-three-line title, author, statistics and progress do not honor shrinking
-just the nominal card height. No allocation API or new heap owner was added.
+just the nominal card height. The slightly inset card keeps its selected highlight clear of the existing
+clock/date status line. No allocation API or new heap owner was added.
 The existing optional cover cache now follows the full card region: 14520 bytes
 in portrait, rather than V9's incorrectly shortened region (6840?14520 depending
 on optional rows). This geometry can affect allocation history; use the SAME

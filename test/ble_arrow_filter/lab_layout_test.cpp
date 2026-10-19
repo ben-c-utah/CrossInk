@@ -5,8 +5,9 @@ constexpr int SmallLine = 20;
 constexpr int CoverY = coverTop(20, 9);
 constexpr int MenuY = CoverY + 242 + CoverGap;
 constexpr int LabY = top(800, 3, 40, SmallLine);
-static_assert(CoverY == 24 && MenuY == 270);
-static_assert(MenuY + menuHeight(7) == 588);
+static_assert(CoverY == 34 && MenuY == 276);
+static_assert(5 + 5 + 2 + 22 <= CoverY); // status origin/inset + small-font ink
+static_assert(MenuY + menuHeight(7) == 594);
 static_assert(LabY == 600 && LabY >= MenuY + menuHeight(7) + Gap);
 static_assert(LabY + height(SmallLine) == 748);
 static_assert(800 - (LabY + height(SmallLine)) == 52);

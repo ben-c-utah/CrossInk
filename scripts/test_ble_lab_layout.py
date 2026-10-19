@@ -83,18 +83,18 @@ def preview(path):
                 canvas[yy * 480 + xx] = border if yy in (y, y+h-1) or xx in (x, x+w-1) else fill
     # Same target geometry as constexpr tests; actual firmware fonts, sample
     # book card with maximum title/statistics/progress content and seven rows.
-    SMALL.draw(canvas, 20, 6, '12:34                                         85%')
-    box(28, 32, 150, 226, 230)
+    SMALL.draw(canvas, 20, 12, '12:34                                         85%')
+    box(42, 42, 150, 226, 230)
     SMALL.draw(canvas, 48, 127, 'Book cover')
-    for i, text in enumerate(['A Long Book Title', 'Across Three Lines', 'With Reading Stats']):
-        BOLD.draw(canvas, 194, 40 + i * 30, text)
-    UI10.draw(canvas, 194, 142, 'Example Author')
-    SMALL.draw(canvas, 194, 174, 'Total time: 12h 34m')
-    SMALL.draw(canvas, 194, 194, 'Avg session: 24m')
-    UI10.draw(canvas, 194, 222, '100%')
-    box(194, 250, 266, 4)
+    for i, text in enumerate(['A Long Book', 'Title Across Three', 'Lines With Stats']):
+        BOLD.draw(canvas, 208, 50 + i * 30, text)
+    UI10.draw(canvas, 208, 152, 'Example Author')
+    SMALL.draw(canvas, 208, 184, 'Total time: 12h 34m')
+    SMALL.draw(canvas, 208, 204, 'Avg session: 24m')
+    UI10.draw(canvas, 208, 232, '100%')
+    box(208, 260, 238, 4)
     for i, text in enumerate(['Browse Files', 'Library', 'OPDS Browser', 'Reading Stats', 'Saved Items', 'File Transfer', 'Settings']):
-        BODY.draw(canvas, 36, 270 + i * 46 + 6, text)
+        BODY.draw(canvas, 36, 276 + i * 46 + 6, text)
     SMALL.draw(canvas, 20, 602, STRINGS['STR_BLE_LAB_TITLE'])
     for i, key in enumerate(['STR_BLE_LAB_TOGGLE', 'STR_BLE_LAB_CONNECT', 'STR_BLE_LAB_RESTART']):
         x = 20 + i * 148
