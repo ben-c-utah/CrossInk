@@ -8,6 +8,7 @@
 
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
+#include "components/OptionPopup.h"
 
 class BleSettingsActivity final : public Activity {
  public:
@@ -24,7 +25,7 @@ class BleSettingsActivity final : public Activity {
   freeink::ui::ListNav listNav;
   ButtonNavigator navigator;
   // Bounded storage lives with this heap-owned screen, not on the render stack.
-  freeink::ui::ListItem items[28]{};
+  freeink::ui::ListItem items[29]{};
   char names[24][32]{};
   char connectedName[32]{};
   uint8_t found = 0;
@@ -35,12 +36,26 @@ class BleSettingsActivity final : public Activity {
   uint32_t passkey = 0;
   bool uiReady = false;
   bool configuring = false;
+  bool managing = false;
+  bool savedListOk = true;
+  uint8_t savedCount = 0;
+  HalBlePageTurner::SavedDevice saved[HalBlePageTurner::MaxSavedDevices]{};
+  HalBlePageTurner::SavedDevice pendingDevice{};
+  OptionPopup confirmation;
+  bool confirming = false;
+  bool pendingAll = false;
+  bool hasForgetResult = false;
+  HalBlePageTurner::ForgetResult forgetResult{};
+  char resultName[32]{};
+  void refreshSaved();
+  void confirmForget(bool all);
+  void performForget();
   bool nextAssigned = false;
   bool previousAssigned = false;
   BleBindings::Learning learning = BleBindings::Learning::Idle;
   bool connected() const { return status == HalBlePageTurner::Status::Connected; }
   int deviceStart() const { return connected() ? 3 : 2; }
-  int rowCount() const { return configuring ? 3 : deviceStart() + found + 1; }
+  int rowCount() const { return configuring ? 3 : managing ? (savedCount ? savedCount : 1) : deviceStart() + found + 2; }
   void activate();
   void snapshot();
   static void screen(UiApp::ScreenType& screen, void* user);

@@ -3,6 +3,7 @@
 #include <AppCapabilities.h>
 #if CROSSINK_APP_CAP_BLE_PAGE_TURNER
 #include <cstdint>
+#include <BleKeyboardHost.h>
 
 #include "BleArrowFilter.h"
 #include "BleButtonBindings.h"
@@ -23,7 +24,12 @@ class HalBlePageTurner {
   uint8_t failure() const { return failureReasons; }
   bool scan();
   bool connect(uint8_t index);
-  void forget();
+  using SavedDevice = freeink::PairedHidDevice;
+  using ForgetResult = freeink::bleforget::Result;
+  static constexpr uint8_t MaxSavedDevices = 14; // Four metadata, six credential, four mapping identities.
+  bool listSaved(SavedDevice* out, uint8_t capacity, uint8_t& count);
+  ForgetResult forget(const SavedDevice& target);
+  ForgetResult forgetAll();
   int8_t poll();
   Status status() const { return state; }
   uint8_t deviceCount() const { return count; }
@@ -53,6 +59,7 @@ class HalBlePageTurner {
   BleBindings::Router bindingRouter;
   BleBindings::Learner learner;
   bool bindingsLoaded = false;
+  bool bindingsInvalid = false;
   BleBindings::Peer pairedPeer() const;
   bool loadBindings();
   void completeLearning();

@@ -1,3 +1,3 @@
 # Compile-time assertions run with either the native suite or the target compiler.
-add_library(ble_arrow_filter_test OBJECT compile_test.cpp memory_policy_test.cpp bindings_test.cpp)
-target_include_directories(ble_arrow_filter_test PRIVATE ${REPO_ROOT}/lib/hal)
+add_library(ble_arrow_filter_test OBJECT compile_test.cpp memory_policy_test.cpp bindings_test.cpp forget_test.cpp)
+target_include_directories(ble_arrow_filter_test PRIVATE ${REPO_ROOT}/lib/hal ${REPO_ROOT}/freeink-sdk/libs/network/BleKeyboardHost/include)

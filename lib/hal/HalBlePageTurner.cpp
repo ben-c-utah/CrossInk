@@ -96,6 +96,7 @@ bool HalBlePageTurner::loadBindings() {
   }
   if (err != ESP_OK || size != blob.size() || !BleBindings::decode(blob, bindings)) {
     LOG_ERR("BLE", "Invalid saved button assignments ignored (size=%u)", static_cast<unsigned>(size));
+    bindingsInvalid = true;
     learner.state = BleBindings::Learning::StorageError;
   }
   bindingsLoaded = true;
@@ -105,6 +106,7 @@ bool HalBlePageTurner::loadBindings() {
 bool HalBlePageTurner::hasBinding(BleBindings::Action action) const { return bindings.get(pairedPeer(), action) != 0; }
 
 bool HalBlePageTurner::beginLearning(BleBindings::Action action) {
+  if (bindingsInvalid) { learner.state = BleBindings::Learning::StorageError; return false; }
   const auto peer = pairedPeer();
   if (!optedIn || !BleBindings::valid(peer)) {
     learner.state = BleBindings::Learning::Disconnected;
@@ -149,6 +151,7 @@ void HalBlePageTurner::completeLearning() {
 }
 
 bool HalBlePageTurner::resetButtons() {
+  if (bindingsInvalid) { learner.state = BleBindings::Learning::StorageError; return false; }
   const auto peer = pairedPeer();
   if (!optedIn || !BleBindings::valid(peer)) { learner.state = BleBindings::Learning::Disconnected; return false; }
   auto next = bindings;
@@ -264,34 +267,82 @@ bool HalBlePageTurner::connect(uint8_t index) {
   return true;
 }
 
-void HalBlePageTurner::forget() {
-#if FREEINK_BLE_HID_LIFECYCLE_DEBUG
-  LOG_INF("BLE", "Forget clicked: opted_in=%u connecting=%u connected=%u metadata=%u selected=%s; legacy scope=ALL",
-          optedIn, host().isConnecting(), host().isConnected(), host().pairedCount(), selected);
-#endif
-  if (!optedIn || host().isConnecting()) return;
-  // Forget retains its existing all-bonds policy. Remove their assignments
-  // first; on storage failure keep both bonds and mappings available to retry.
-  const BleBindings::Store empty{};
-  if (!saveBindings(empty)) {
-    failureReasons = ButtonStorage;
-    return;
+bool HalBlePageTurner::listSaved(SavedDevice* out, uint8_t capacity, uint8_t& savedCount) {
+  if (!loadBindings() || bindingsInvalid || !host().listStored(out, capacity, savedCount)) return false;
+  for (const auto& table : bindings.tables) {
+    if (!BleBindings::valid(table.peer)) continue;
+    bool found = false;
+    for (uint8_t i = 0; i < savedCount; ++i)
+      if (strcasecmp(out[i].addr, table.peer.address) == 0 && out[i].addrType == table.peer.type) found = true;
+    if (found) continue;
+    if (savedCount == capacity) return false;
+    auto& device = out[savedCount++];
+    device = {};
+    memcpy(device.addr, table.peer.address, sizeof(device.addr));
+    device.addrType = table.peer.type;
   }
+  for (uint8_t i = 0; i < savedCount; ++i) {
+    if (out[i].name[0]) continue;
+    // Display-only name lookup; deletion still uses the copied address/type.
+    for (uint8_t j = 0; j < count; ++j) if (strcasecmp(out[i].addr, devices[j].address) == 0)
+      std::snprintf(out[i].name, sizeof(out[i].name), "%s", devices[j].name);
+  }
+  return true;
+}
+
+HalBlePageTurner::ForgetResult HalBlePageTurner::forget(const SavedDevice& target) {
+  using namespace freeink::bleforget;
+  if (!loadBindings() || bindingsInvalid) return {Code::Mappings, false};
+  HalPowerManager::Lock powerLock;
+  SavedDevice identity{};
+  auto result = host().forgetPeer(target, identity);
+  if (!result.ok()) return result;
+  auto next = bindings;
+  const auto remove = [&](const SavedDevice& device) {
+    BleBindings::Peer peer{};
+    memcpy(peer.address, device.addr, sizeof(peer.address));
+    peer.type = device.addrType;
+    return next.reset(peer);
+  };
+  const bool original = remove(target);
+  const bool resolved = remove(identity);
+  const bool changed = original || resolved;
+  result = freeink::bleforget::mappings(result, changed, !changed || saveBindings(next));
+  if (!result.ok()) return result;
+  bindings = next;
+  cancelLearning();
+  bindingRouter.reset();
+  count = 0;
+  scanPending = false;
+  host().releaseScanResults();
+  failureReasons = None;
+  state = host().isConnected() ? Status::Connected : Status::Ready;
+  LOG_INF("BLE", "Forget one completed: address=%s type=%u changed=%u", target.addr, target.addrType, result.changed);
+  return result;
+}
+
+HalBlePageTurner::ForgetResult HalBlePageTurner::forgetAll() {
+  using namespace freeink::bleforget;
+  if (!loadBindings()) return {Code::Mappings, false};
+  // Complete teardown before touching the dedicated NimBLE namespace. This also
+  // works when startup was refused: no init, guard bypass or stale host cache.
+  HalPowerManager::Lock powerLock;
+  if (!stop(2000)) return {Code::Busy, false};
+  auto result = host().forgetAllStored();
+  if (!result.ok()) return result;
+  bool changed = bindingsInvalid;
+  for (const auto& table : bindings.tables) if (table.peer.address[0]) changed = true;
+  const BleBindings::Store empty{};
+  result = freeink::bleforget::mappings(result, changed, saveBindings(empty));
+  if (!result.ok()) return result;
   bindings = empty;
+  bindingsInvalid = false;
   learner.cancel();
   bindingRouter.reset();
-  failureReasons = None;
-  host().disconnect();
-  // This experiment exposes one keyboard; forget all its stored host bonds.
-  while (host().pairedCount()) {
-    char address[18];
-    std::memcpy(address, host().paired(0).addr, sizeof(address));
-    host().forget(address);
-  }
   selected[0] = '\0';
-  pairingPasskey = 0;
-  filter.reset();
-  state = Status::Ready;
+  failureReasons = None;
+  LOG_INF("BLE", "Forget all completed: changed=%u (radio remains off)", result.changed);
+  return result;
 }
 
 int8_t HalBlePageTurner::poll() {
