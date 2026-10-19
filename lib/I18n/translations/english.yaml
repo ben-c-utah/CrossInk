@@ -996,3 +996,5 @@ STR_MONTH_SEP: "September"
 STR_MONTH_OCT: "October"
 STR_MONTH_NOV: "November"
 STR_MONTH_DEC: "December"
+
+STR_BLE_DIAGNOSTIC_RECLAIM: "Reclaim Font Caches (Diagnostic)"

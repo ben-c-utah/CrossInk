@@ -3,6 +3,13 @@
 using namespace BleMemoryPolicy;
 
 constexpr Snapshot Hardware{132792, 81908, 8272852, 0, true};
+static_assert(Start.freeInternal == 131072 && Start.largestInternal == 79872);
+// V7 fragmented hardware state: plenty of total memory must not bypass the
+// contiguous-block guard. Cache experiments must use this unchanged policy.
+constexpr auto FragmentedV7 = evaluate({136312, 40948, 8267856, 0, true}, Start);
+static_assert(FragmentedV7.largestInternal && !FragmentedV7.freeInternal &&
+              !FragmentedV7.wifi && !FragmentedV7.psram);
+static_assert(!evaluate({138604, 90100, 8272852, 0, true}, Start).any());
 static_assert(!evaluate(Hardware, Start).any());
 static_assert(!evaluate({Start.freeInternal, Start.largestInternal, 1, 0, true}, Start).any());
 static_assert(evaluate({Start.freeInternal - 1, Start.largestInternal, 1, 0, true}, Start).freeInternal);

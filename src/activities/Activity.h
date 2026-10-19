@@ -1,5 +1,6 @@
 #pragma once
 #include <Logging.h>
+#include <HeapDiagnostics.h>
 
 #include <cassert>
 #include <cstdint>
@@ -23,6 +24,9 @@ class Activity {
 
  protected:
   std::string name;
+#if CROSSINK_HEAP_DIAGNOSTICS
+  bool diagnosticFirstRender = true;
+#endif
   GfxRenderer& renderer;
   MappedInputManager& mappedInput;
 

@@ -1,4 +1,5 @@
 #pragma once
+#include <HeapDiagnostics.h>
 
 #include <EpdFontFamily.h>
 #include <HalDisplay.h>
@@ -174,6 +175,9 @@ class GfxRenderer {
   }
   void setFontCacheManager(FontCacheManager* m) { fontCacheManager_ = m; }
   FontCacheManager* getFontCacheManager() const { return fontCacheManager_; }
+#if CROSSINK_HEAP_DIAGNOSTICS
+  void logHeapAllocations() const;
+#endif
   bool isFontCacheScanning() const;
   const std::map<int, EpdFontFamily>& getFontMap() const { return fontMap; }
   void registerSdCardFont(int fontId, SdCardFont* font) { sdCardFonts_[fontId] = font; }

@@ -2,6 +2,8 @@
 
 #if CROSSINK_APP_CAP_BLE_PAGE_TURNER
 #include <I18n.h>
+#include <FontCacheManager.h>
+#include <FontDecompressor.h>
 
 #include <cstdio>
 #include <cstring>
@@ -85,6 +87,29 @@ void BleSettingsActivity::performForget() {
   if (managing) refreshSaved();
 }
 
+#if CROSSINK_HEAP_DIAGNOSTICS
+void BleSettingsActivity::reclaimDiagnosticCaches() {
+  // activate() runs under loop's RenderLock; also reject a paused reader on the stack.
+  auto* cache = renderer.getFontCacheManager();
+  if (blePageTurner.resident() || !activityManager.diagnosticCanReclaimFonts() || !cache || cache->isScanning()) {
+    LOG_ERR("HDBG", "Cache experiment refused: BLE must be fully Off, no retained reader, font scan inactive");
+    return;
+  }
+  HeapDiagnostics::snapshot("reclaim before", "", true);
+  renderer.logHeapAllocations();
+  cache->logAllocations();
+  HeapDiagnostics::blocks("reclaim before");
+  if (auto* decompressor = cache->getDecompressor()) decompressor->clearCache();
+  HeapDiagnostics::snapshot("reclaim after built-in fonts");
+  cache->releaseSdFontCaches();
+  HeapDiagnostics::snapshot("reclaim after all fonts BEFORE repaint", "", true);
+  cache->logAllocations();
+  HeapDiagnostics::blocks("reclaim after all fonts BEFORE repaint");
+  diagnosticRepaint = true;
+  // No radio start, settings writes, font unload or framebuffer changes here.
+}
+#endif
+
 void BleSettingsActivity::activate() {
   app.clearTapFlash();
   if (managing) {
@@ -111,6 +136,10 @@ void BleSettingsActivity::activate() {
     managing = true;
     selected = 0;
     refreshSaved();
+#if CROSSINK_HEAP_DIAGNOSTICS
+  } else if (selected == deviceStart() + found + 2) {
+    reclaimDiagnosticCaches();
+#endif
   } else if (selected == deviceStart() + found + 1) {
     confirmForget(true);
   } else {
@@ -284,6 +313,10 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
     const int first = self.deviceStart();
     self.items[first + self.found].label = tr(STR_BLE_FORGET);
     self.items[first + self.found + 1].label = tr(STR_BLE_FORGET_ALL);
+#if CROSSINK_HEAP_DIAGNOSTICS
+    self.items[first + self.found + 2].label = tr(STR_BLE_DIAGNOSTIC_RECLAIM);
+    self.items[first + self.found + 2].enabled = !blePageTurner.resident() && activityManager.diagnosticCanReclaimFonts();
+#endif
     self.items[first + self.found].sectionHeading = tr(STR_BLE_DEVICE_ACTIONS);
     if (self.found) self.items[first].sectionHeading = tr(STR_BLE_DISCOVERED_DEVICES);
     for (int i = 0; i < self.found; ++i) self.items[first + i].label = self.names[i];
@@ -325,6 +358,13 @@ void BleSettingsActivity::render(RenderLock&&) {
   const auto labels = mappedInput.mapLabels(mappedInput.withBackArrow(tr(STR_BACK)), tr(STR_SELECT), tr(STR_DIR_UP),
                                            tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+#if CROSSINK_HEAP_DIAGNOSTICS
+  if (diagnosticRepaint) {
+    HeapDiagnostics::snapshot("reclaim after normal repaint", "", true);
+    if (auto* cache = renderer.getFontCacheManager()) cache->logAllocations();
+    diagnosticRepaint = false;
+  }
+#endif
   renderer.displayBuffer();
 }
 #endif

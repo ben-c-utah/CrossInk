@@ -525,3 +525,15 @@ void FontDecompressor::logStats(const char* label) {
   }
   resetStats();
 }
+
+#if CROSSINK_HEAP_DIAGNOSTICS
+void FontDecompressor::logAllocations() const {
+  HeapDiagnostics::allocation("fdc.hotGroup", hotGroup, hotGroupCapacity);
+  HeapDiagnostics::allocation("fdc.hotGlyph", hotGlyphBuf, hotGlyphBufCapacity);
+  for (uint8_t i = 0; i < pageSlotCount; ++i) {
+    LOG_INF("HDBG", "fdc slot=%u glyphs=%u", i, pageSlots[i].glyphCount);
+    HeapDiagnostics::allocation("fdc.page", pageSlots[i].buffer, 0); // actual size logged below
+    HeapDiagnostics::allocation("fdc.lookup", pageSlots[i].glyphs, pageSlots[i].glyphCount * sizeof(PageGlyphEntry));
+  }
+}
+#endif

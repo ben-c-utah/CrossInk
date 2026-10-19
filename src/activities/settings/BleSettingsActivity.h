@@ -25,7 +25,7 @@ class BleSettingsActivity final : public Activity {
   freeink::ui::ListNav listNav;
   ButtonNavigator navigator;
   // Bounded storage lives with this heap-owned screen, not on the render stack.
-  freeink::ui::ListItem items[29]{};
+  freeink::ui::ListItem items[29 + CROSSINK_HEAP_DIAGNOSTICS]{};
   char names[24][32]{};
   char connectedName[32]{};
   uint8_t found = 0;
@@ -36,6 +36,10 @@ class BleSettingsActivity final : public Activity {
   uint32_t passkey = 0;
   bool uiReady = false;
   bool configuring = false;
+#if CROSSINK_HEAP_DIAGNOSTICS
+  bool diagnosticRepaint = false;
+  void reclaimDiagnosticCaches();
+#endif
   bool managing = false;
   bool savedListOk = true;
   uint8_t savedCount = 0;
@@ -55,7 +59,7 @@ class BleSettingsActivity final : public Activity {
   BleBindings::Learning learning = BleBindings::Learning::Idle;
   bool connected() const { return status == HalBlePageTurner::Status::Connected; }
   int deviceStart() const { return connected() ? 3 : 2; }
-  int rowCount() const { return configuring ? 3 : managing ? (savedCount ? savedCount : 1) : deviceStart() + found + 2; }
+  int rowCount() const { return configuring ? 3 : managing ? (savedCount ? savedCount : 1) : deviceStart() + found + 2 + CROSSINK_HEAP_DIAGNOSTICS; }
   void activate();
   void snapshot();
   static void screen(UiApp::ScreenType& screen, void* user);

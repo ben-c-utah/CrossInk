@@ -1806,3 +1806,24 @@ const uint8_t* SdCardFont::getOverflowBitmap(const EpdGlyph* glyph) const {
 }
 
 SdCardFont* SdCardFont::fromMissCtx(void* ctx) { return static_cast<OverflowContext*>(ctx)->self; }
+
+#if CROSSINK_HEAP_DIAGNOSTICS
+void SdCardFont::logAllocations() const {
+  for (uint8_t i = 0; i < MAX_STYLES; ++i) {
+    const auto& s = styles_[i];
+    if (!s.present) continue;
+    LOG_INF("HDBG", "sdfont=%p style=%u bitmap_used=%u", this, i, s.miniBitmapUsed);
+    HeapDiagnostics::allocation("sd.glyphs", s.miniGlyphs, s.miniGlyphCapacity * sizeof(EpdGlyph));
+    HeapDiagnostics::allocation("sd.intervals", s.miniIntervals, s.miniIntervalCapacity * sizeof(EpdUnicodeInterval));
+    HeapDiagnostics::allocation("sd.bitmap", s.miniBitmap.get(), s.miniBitmapCapacity);
+    HeapDiagnostics::allocation("sd.advance", advanceTable_[i], advanceTableCapacity_[i] * sizeof(AdvanceEntry));
+    HeapDiagnostics::allocation("sd.miniKern", s.miniKernMatrix, s.miniKernMatrixCapacity);
+    HeapDiagnostics::allocation("sd.kernLeft", s.kernLeftClasses, 0);
+    HeapDiagnostics::allocation("sd.kernRight", s.kernRightClasses, 0);
+    HeapDiagnostics::allocation("sd.ligatures", s.ligaturePairs, 0);
+    HeapDiagnostics::allocation("sd.fullIntervals", s.fullIntervals, 0);
+    HeapDiagnostics::allocation("sd.bmpIntervals", s.bmpIntervals, 0);
+  }
+  for (const auto& entry : overflow_) HeapDiagnostics::allocation("sd.overflow", entry.bitmap, 0);
+}
+#endif

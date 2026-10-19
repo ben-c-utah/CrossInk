@@ -2,6 +2,8 @@
 
 ### Added
 
+- Opt-in X4 Pro heap diagnostics and a Bluetooth-Off font-cache reclamation experiment for investigating Bluetooth restart failures.
+
 - Forget one selected Bluetooth device without removing others, or confirm Forget All Devices for Bluetooth-only recovery, including while the radio is Off. Results remain visible on screen.
 - X4 Pro diagnostic-build logs for BLE security, remembered devices and connection teardown; serial output omits pairing passkey values.
 - Assign Next Page and Previous Page buttons per connected BLE device; assignments survive restart while Bluetooth remains session-only.

@@ -2471,6 +2471,10 @@ void EpubReaderActivity::onEnter() {
 }
 
 void EpubReaderActivity::onExit() {
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("reader before cleanup");
+  if (auto* cache = renderer.getFontCacheManager()) cache->logAllocations();
+#endif
   sdFontSystem.setSettingsPersistenceCallback(nullptr, nullptr);
   // Drop the scalable-family catalog retained during reading. The active font
   // and its PSRAM face lifetime remain managed by SdCardFontSystem.
@@ -2489,6 +2493,10 @@ void EpubReaderActivity::onExit() {
     fontCache->releaseSdFontCaches();
   }
   MemoryBudget::logEpubHeapPools("reader exit after caches");
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("reader after cache release");
+  if (auto* cache = renderer.getFontCacheManager()) cache->logAllocations();
+#endif
   Activity::onExit();
 
   // Deactivate reader-specific front button mapping.

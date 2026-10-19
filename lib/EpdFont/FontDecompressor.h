@@ -1,4 +1,5 @@
 #pragma once
+#include <HeapDiagnostics.h>
 
 #include <InflateReader.h>
 
@@ -21,6 +22,9 @@ class FontDecompressor {
 
   // Free all cached data (page slots + hot group).
   void clearCache();
+#if CROSSINK_HEAP_DIAGNOSTICS
+  void logAllocations() const;
+#endif
 
   // Pre-scan UTF-8 text and extract needed glyph bitmaps into a flat page slot.
   // Each group is decompressed once into a temp buffer; only needed glyphs are kept.

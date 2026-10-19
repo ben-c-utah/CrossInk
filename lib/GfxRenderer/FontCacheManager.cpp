@@ -264,3 +264,15 @@ FontCacheManager::PrewarmScope::PrewarmScope(PrewarmScope&& other) noexcept
 FontCacheManager::PrewarmScope FontCacheManager::createPrewarmScope(const PreparationPolicy policy) {
   return PrewarmScope(*this, policy);
 }
+
+#if CROSSINK_HEAP_DIAGNOSTICS
+void FontCacheManager::logAllocations() const {
+  LOG_INF("HDBG", "font caches manager=%p scan=%u codepoints=%u fonts=%u", this,
+          static_cast<unsigned>(scanMode_), scanCodepointCount_, scanFontCount_);
+  if (fontDecompressor_) fontDecompressor_->logAllocations();
+  for (const auto& [id, font] : sdCardFonts_) {
+    LOG_INF("HDBG", "SD font id=%d", id);
+    font->logAllocations();
+  }
+}
+#endif

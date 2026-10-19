@@ -1,4 +1,5 @@
 #pragma once
+#include <HeapDiagnostics.h>
 
 #include <Memory.h>
 
@@ -73,6 +74,9 @@ class SdCardFont {
   // allocations may be retained when heap is healthy; the persistent advance
   // cache is also preserved so repeated layout passes can reuse fetched metrics.
   void clearCache();
+#if CROSSINK_HEAP_DIAGNOSTICS
+  void logAllocations() const;
+#endif
 
   // Release optional resident caches before memory-heavy work such as EPUB
   // image extraction. Keeps the font loaded and usable, but future layout or

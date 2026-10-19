@@ -1,4 +1,5 @@
 #pragma once
+#include <HeapDiagnostics.h>
 
 #include <EpdFontFamily.h>
 
@@ -17,6 +18,9 @@ class FontCacheManager {
   void setFontDecompressor(FontDecompressor* d);
 
   void clearCache();
+#if CROSSINK_HEAP_DIAGNOSTICS
+  void logAllocations() const;
+#endif
   void releaseSdFontCaches();
   bool prewarmCache(int fontId, const char* utf8Text, uint8_t styleMask = 0x0F,
                     PreparationPolicy policy = PreparationPolicy::Normal);

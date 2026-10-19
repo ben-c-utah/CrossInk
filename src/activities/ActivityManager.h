@@ -1,4 +1,5 @@
 #pragma once
+#include <HeapDiagnostics.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -135,6 +136,10 @@ class ActivityManager {
 
   void begin(uint32_t renderTaskStackBytes = 16384);
   void loop();
+#if CROSSINK_HEAP_DIAGNOSTICS
+  // Caller holds RenderLock; reject even a paused reader underneath Settings.
+  bool diagnosticCanReclaimFonts() const;
+#endif
 
   // Will replace currentActivity and drop all activities on stack
   void replaceActivity(std::unique_ptr<Activity>&& newActivity);

@@ -17,6 +17,7 @@
 
 #include <algorithm>
 
+#include "components/UITheme.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "OpdsServerStore.h"
@@ -486,7 +487,24 @@ void ActivityManager::renderTaskLoop() {
       // Apply Night Mode to each activity's normal-polarity frame. SleepActivity
       // preserves it only for Quick Resume and clears it for other sleep screens.
       display.setInverted(SETTINGS.screenInverted != 0);
+#if CROSSINK_HEAP_DIAGNOSTICS
+      const bool first = currentActivity->diagnosticFirstRender;
+      currentActivity->diagnosticFirstRender = false;
+      if (first) HeapDiagnostics::snapshot("before first render", currentActivity->name.c_str());
+#endif
       currentActivity->render(std::move(lock));
+#if CROSSINK_HEAP_DIAGNOSTICS
+      // Never change the existing lock lifetime just for diagnostics. Skip cache
+      // inspection if a render implementation explicitly released its lock.
+      if (first) {
+        if (lock.ownsLock() && currentActivity) {
+          HeapDiagnostics::snapshot("after first render", currentActivity->name.c_str());
+          HeapDiagnostics::allocation("UI theme", &GUI, 0);
+          renderer.logHeapAllocations();
+          if (auto* cache = renderer.getFontCacheManager()) cache->logAllocations();
+        } else HeapDiagnostics::snapshot("after first render (lock released)");
+      }
+#endif
       restoredActivityNeedsRender = false;
     }
     TouchRegistry::getInstance().publish();
@@ -844,8 +862,14 @@ void ActivityManager::exitActivity(const RenderLock& lock) {
   // Note: lock must be held by the caller
   if (currentActivity) {
     TouchRegistry::getInstance().clear();
+#if CROSSINK_HEAP_DIAGNOSTICS
+    HeapDiagnostics::snapshot("before activity exit", currentActivity->name.c_str());
+#endif
     currentActivity->onExit();
     currentActivity.reset();
+#if CROSSINK_HEAP_DIAGNOSTICS
+    HeapDiagnostics::snapshot("after activity destruction");
+#endif
   }
 }
 
@@ -1389,3 +1413,12 @@ void RenderLock::unlock() {
  * @note Must not be called from ISR context — xSemaphoreGetMutexHolder is not ISR-safe.
  */
 bool RenderLock::peek() { return xSemaphoreGetMutexHolder(activityManager.renderingMutex) != nullptr; }
+
+#if CROSSINK_HEAP_DIAGNOSTICS
+bool ActivityManager::diagnosticCanReclaimFonts() const {
+  if (currentActivity && currentActivity->isBookReaderActivity()) return false;
+  if (pendingActivity && pendingActivity->isBookReaderActivity()) return false;
+  for (const auto& activity : stackActivities) if (activity->isBookReaderActivity()) return false;
+  return true;
+}
+#endif

@@ -3337,3 +3337,14 @@ int GfxRenderer::getFontIdForSize(const int fontId, const uint8_t points) const 
 #endif
   return fontId;
 }
+
+#if CROSSINK_HEAP_DIAGNOSTICS
+void GfxRenderer::logHeapAllocations() const {
+  LOG_INF("HDBG", "renderer fonts=%u sdFonts=%u fallback=%u BW chunks=%u capacity=%u",
+          unsigned(fontMap.size()), unsigned(sdCardFonts_.size()), unsigned(fallbackFontMap_.size()),
+          unsigned(bwBufferChunks.size()), unsigned(bwBufferChunks.capacity()));
+  if (bwBufferChunks.capacity())
+    HeapDiagnostics::allocation("renderer.BWslots", bwBufferChunks.data(), bwBufferChunks.capacity() * sizeof(uint8_t*));
+  for (const auto* chunk : bwBufferChunks) HeapDiagnostics::allocation("renderer.BWchunk", chunk, 0);
+}
+#endif

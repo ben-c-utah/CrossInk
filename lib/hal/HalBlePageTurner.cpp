@@ -13,6 +13,7 @@
 #include <cstring>
 
 #include "BleMemoryPolicy.h"
+#include <HeapDiagnostics.h>
 
 #if !defined(CROSSINK_BLE_HOST_PSRAM) || !CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL
 #error "X4 Pro BLE memory policy requires the PSRAM NimBLE host allocator"
@@ -174,6 +175,10 @@ bool HalBlePageTurner::enable() {
 #if CROSSINK_BLE_INPUT_DIAGNOSTICS
   diagnosticEdges = 0;
 #endif
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("BLE before preflight", "", true);
+  HeapDiagnostics::blocks("before BLE preflight");
+#endif
   // BLE needs controller RAM and task stacks even on PSRAM-equipped boards.
   if (!logGuard("preflight", memorySnapshot(), BleMemoryPolicy::Start, &failureReasons)) {
     LOG_ERR("BLE", "Start refused; see individual guard failures above");
@@ -215,12 +220,18 @@ bool HalBlePageTurner::enable() {
     state = Status::LowMemory;
     return false;
   }
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("BLE initialization complete");
+#endif
   return true;
 }
 
 bool HalBlePageTurner::stop(uint32_t timeoutMs) {
   learner.tick(millis(), false);
   const bool wasResident = resident();
+#if CROSSINK_HEAP_DIAGNOSTICS
+  if (wasResident && !host().isStopping()) HeapDiagnostics::snapshot("BLE before shutdown", "", true);
+#endif
   optedIn = false;
   pairingPasskey = 0;
   scanPending = false;
@@ -234,6 +245,12 @@ bool HalBlePageTurner::stop(uint32_t timeoutMs) {
     return false;
   }
   if (wasResident) logGuard("after shutdown", memorySnapshot(), BleMemoryPolicy::PostStart);
+#if CROSSINK_HEAP_DIAGNOSTICS
+  if (wasResident) {
+    HeapDiagnostics::snapshot("BLE teardown complete", "running=0 stopping=0", true);
+    HeapDiagnostics::blocks("BLE teardown complete");
+  }
+#endif
   state = Status::Off;
   return true;
 }
@@ -387,6 +404,9 @@ int8_t HalBlePageTurner::poll() {
     if (state != Status::Connected) {
       LOG_INF("BLE", "Connected to %s", host().connectedName());
       host().releaseScanResults();
+#if CROSSINK_HEAP_DIAGNOSTICS
+      HeapDiagnostics::snapshot("BLE connected scan released");
+#endif
     }
     state = Status::Connected;
   } else if (state == Status::Connected) {

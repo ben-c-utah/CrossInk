@@ -6,7 +6,14 @@
 #include "KOReaderCredentialStore.h"
 #include "reader/EpubReaderMenuModel.h"
 
-void Activity::onEnter() { LOG_DBG("ACT", "Entering activity: %s", name.c_str()); }
+void Activity::onEnter() {
+  LOG_DBG("ACT", "Entering activity: %s", name.c_str());
+#if CROSSINK_HEAP_DIAGNOSTICS
+  diagnosticFirstRender = true;
+  HeapDiagnostics::snapshot("activity enter", name.c_str());
+  HeapDiagnostics::allocation("activity object", this, 0);
+#endif
+}
 
 void Activity::onExit() { LOG_DBG("ACT", "Exiting activity: %s", name.c_str()); }
 
