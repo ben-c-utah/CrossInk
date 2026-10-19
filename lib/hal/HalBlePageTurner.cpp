@@ -11,19 +11,29 @@
 
 #include <cstring>
 
+#include "BleMemoryPolicy.h"
+
+#if !defined(CROSSINK_BLE_HOST_PSRAM) || !CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL
+#error "X4 Pro BLE memory policy requires the PSRAM NimBLE host allocator"
+#endif
+
 HalBlePageTurner blePageTurner;
 
 namespace {
+static_assert(WIFI_MODE_NULL == 0);
 auto& host() { return freeink::BleKeyboardHost::getInstance(); }
-bool hasHeadroom(size_t freeBytes, size_t largest) {
-  return heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) >= freeBytes &&
-         heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) >= largest;
-}
-void logHeap(const char* stage) {
-  LOG_INF("BLE", "%s: internal free=%u largest=%u PSRAM free=%u", stage,
-          heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+BleMemoryPolicy::Snapshot memorySnapshot() {
+  return {heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
           heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-          heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+          heap_caps_get_free_size(MALLOC_CAP_SPIRAM), static_cast<int>(WiFi.getMode()), psramFound()};
+}
+bool logGuard(const char* stage, const BleMemoryPolicy::Snapshot& heap, const BleMemoryPolicy::Budget& budget) {
+  const auto fail = BleMemoryPolicy::evaluate(heap, budget);
+  LOG_INF("BLE", "%s: wifi_mode=%d wifi_block=%u internal_free=%u largest=%u psram_free=%u psram_ok=%u", stage,
+          heap.wifiMode, fail.wifi, heap.freeInternal, heap.largestInternal, heap.freePsram, heap.psramAvailable);
+  LOG_INF("BLE", "%s guard: need_free=%u need_largest=%u fail_free=%u fail_largest=%u fail_psram=%u pass=%u", stage,
+          budget.freeInternal, budget.largestInternal, fail.freeInternal, fail.largestInternal, fail.psram, !fail.any());
+  return !fail.any();
 }
 }  // namespace
 
@@ -32,16 +42,20 @@ bool HalBlePageTurner::resident() const { return host().isRunning() || host().is
 bool HalBlePageTurner::enable() {
   if (resident()) return optedIn;
   // BLE needs controller RAM and task stacks even on PSRAM-equipped boards.
-  if (WiFi.getMode() != WIFI_MODE_NULL || !hasHeadroom(128 * 1024, 80 * 1024)) {
-    LOG_ERR("BLE", "Start refused: Wi-Fi active or insufficient internal heap");
-    logHeap("refused");
+  if (!logGuard("preflight", memorySnapshot(), BleMemoryPolicy::Start)) {
+    LOG_ERR("BLE", "Start refused; see individual guard failures above");
     state = Status::LowMemory;
     return false;
   }
   HalPowerManager::Lock powerLock;
-  logHeap("before start");
+  LOG_INF("BLE", "NimBLE host allocator=PSRAM; controller and task stacks remain internal");
+  if (!logGuard("before start", memorySnapshot(), BleMemoryPolicy::Start)) {
+    state = Status::LowMemory;
+    return false;
+  }
   if (!host().begin("CrossInk X4 Pro")) {
     LOG_ERR("BLE", "HID host initialization failed");
+    logGuard("initialization failed", memorySnapshot(), BleMemoryPolicy::PostStart);
     state = Status::Failed;
     return false;
   }
@@ -49,6 +63,7 @@ bool HalBlePageTurner::enable() {
   // unless its verified task exists, so OOM cannot strand a pending connect.
   if (!xTaskGetHandle("ble-conn")) {
     LOG_ERR("BLE", "HID connection task allocation failed");
+    logGuard("task allocation failed", memorySnapshot(), BleMemoryPolicy::PostStart);
     stop();
     state = Status::Failed;
     return false;
@@ -59,8 +74,7 @@ bool HalBlePageTurner::enable() {
   state = Status::Ready;
   pairingPasskey = 0;
   filter.reset();
-  logHeap("after start");
-  if (!hasHeadroom(64 * 1024, 32 * 1024)) {
+  if (!logGuard("after start", memorySnapshot(), BleMemoryPolicy::PostStart)) {
     LOG_ERR("BLE", "Rolling back BLE start to preserve reader heap");
     stop();
     state = Status::LowMemory;
@@ -70,6 +84,7 @@ bool HalBlePageTurner::enable() {
 }
 
 bool HalBlePageTurner::stop(uint32_t timeoutMs) {
+  const bool wasResident = resident();
   optedIn = false;
   pairingPasskey = 0;
   scanPending = false;
@@ -81,7 +96,7 @@ bool HalBlePageTurner::stop(uint32_t timeoutMs) {
     state = Status::Stopping;
     return false;
   }
-  if (state != Status::Off) logHeap("stopped");
+  if (wasResident) logGuard("after shutdown", memorySnapshot(), BleMemoryPolicy::PostStart);
   state = Status::Off;
   return true;
 }
@@ -130,9 +145,10 @@ int8_t HalBlePageTurner::poll() {
     if (resident()) stop();
     return 0;
   }
-  if (WiFi.getMode() != WIFI_MODE_NULL || !hasHeadroom(48 * 1024, 24 * 1024)) {
+  const auto runningHeap = memorySnapshot();
+  if (BleMemoryPolicy::evaluate(runningHeap, BleMemoryPolicy::Running).any()) {
     LOG_ERR("BLE", "Stopping BLE for Wi-Fi or low reader heap");
-    logHeap("low headroom");
+    logGuard("runtime refusal", runningHeap, BleMemoryPolicy::Running);
     stop();
     return 0;
   }
