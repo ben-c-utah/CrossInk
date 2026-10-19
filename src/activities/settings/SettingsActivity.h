@@ -317,6 +317,9 @@ class SettingsActivity final : public Activity {
   void openFrontlightScheduleTimePicker(uint16_t CrossPointSettings::* valuePtr, StrId titleId);
   void openStringEditor(const SettingInfo& setting);
   void rebuildSettingsLists();
+#if CROSSINK_HEAP_DIAGNOSTICS
+  void logDiagnosticSettings(const char* stage) const;
+#endif
   void syncQuickResumeTimeoutForSleepScreen(bool sleepScreenChanged, bool quickResumeTimeoutChanged);
   void closeRootSettings();
   void finishToParent();

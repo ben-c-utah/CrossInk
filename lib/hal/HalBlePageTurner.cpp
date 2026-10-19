@@ -11,6 +11,7 @@
 #include <nvs.h>
 
 #include <cstring>
+#include <cstdio>
 
 #include "BleMemoryPolicy.h"
 #include <HeapDiagnostics.h>
@@ -266,8 +267,12 @@ bool HalBlePageTurner::scan() {
 
 bool HalBlePageTurner::connect(uint8_t index) {
   if (!optedIn || index >= count || host().isConnecting() || host().isConnected()) return false;
+  return connectAddress(devices[index].address);
+}
+
+bool HalBlePageTurner::connectAddress(const char* address) {
   failureReasons = None;
-  std::memcpy(selected, devices[index].address, sizeof(selected));
+  std::memcpy(selected, address, sizeof(selected));
   pairingPasskey = 0;
   filter.reset();
   bindingRouter.reset();
@@ -445,4 +450,85 @@ int8_t HalBlePageTurner::poll() {
   }
   return 0;
 }
+
+#if CROSSINK_BLE_LAB
+bool HalBlePageTurner::labConnectedPeer(BleLabPolicy::Selection& out) const {
+  if (!enabled() || host().isStopping() || host().isConnecting()) return false;
+  const auto peer = pairedPeer();
+  if (!BleBindings::valid(peer)) return false;
+  out = {};
+  out.peer = peer;
+  std::snprintf(out.name, sizeof(out.name), "%s", connectedName());
+  return true;
+}
+bool HalBlePageTurner::labPeerConnected(const BleBindings::Peer& peer) const {
+  return BleBindings::same(peer, pairedPeer());
+}
+bool HalBlePageTurner::labConnectSaved(const BleBindings::Peer& peer) {
+  if (!enabled() || host().isConnecting() || host().isConnected() || host().isScanning() || scanPending) return false;
+  // Never trust a name, stale scan index, or a Lab record without SDK metadata.
+  for (uint8_t i = 0; i < host().pairedCount(); ++i) {
+    const auto& saved = host().paired(i);
+    BleBindings::Peer known{};
+    std::memcpy(known.address, saved.addr, sizeof(known.address));
+    known.type = saved.addrType;
+    if (BleBindings::same(peer, known)) return connectAddress(peer.address);
+  }
+  LOG_ERR("BLE", "Home Lab selection is no longer a remembered peer");
+  return false;
+}
+bool HalBlePageTurner::labLoadSelection(BleLabPolicy::Selection& out, bool& present) {
+  present = false;
+  nvs_handle_t handle;
+  auto err = nvs_open(BindingNamespace, NVS_READONLY, &handle);
+  if (err == ESP_ERR_NVS_NOT_FOUND) return true;
+  if (err == ESP_OK) {
+    size_t size = sizeof(out);
+    err = nvs_get_blob(handle, "lab-peer", &out, &size);
+    nvs_close(handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return true;
+    if (err == ESP_OK && size == sizeof(out) && BleLabPolicy::valid(out)) { present = true; return true; }
+  }
+  LOG_ERR("BLE", "Home Lab selection read failed: %s", esp_err_to_name(err));
+  return false;
+}
+bool HalBlePageTurner::labSaveSelection(const BleLabPolicy::Selection& value) {
+  if (!BleLabPolicy::valid(value)) return false;
+  nvs_handle_t handle;
+  auto err = nvs_open(BindingNamespace, NVS_READWRITE, &handle);
+  if (err == ESP_OK) {
+    err = nvs_set_blob(handle, "lab-peer", &value, sizeof(value));
+    if (err == ESP_OK) err = nvs_commit(handle);
+    BleLabPolicy::Selection check{};
+    size_t size = sizeof(check);
+    if (err == ESP_OK) err = nvs_get_blob(handle, "lab-peer", &check, &size);
+    if (err == ESP_OK && (size != sizeof(value) || std::memcmp(&check, &value, sizeof(value)))) err = ESP_FAIL;
+    nvs_close(handle);
+  }
+  if (err != ESP_OK) LOG_ERR("BLE", "Home Lab selection save failed: %s", esp_err_to_name(err));
+  return err == ESP_OK;
+}
+bool HalBlePageTurner::labClearSelection() {
+  nvs_handle_t handle;
+  auto err = nvs_open(BindingNamespace, NVS_READONLY, &handle);
+  if (err == ESP_ERR_NVS_NOT_FOUND) return true;
+  if (err != ESP_OK) { LOG_ERR("BLE", "Lab clear open failed: %s", esp_err_to_name(err)); return false; }
+  size_t probe = 0;
+  err = nvs_get_blob(handle, "lab-peer", nullptr, &probe);
+  nvs_close(handle);
+  if (err == ESP_ERR_NVS_NOT_FOUND) return true;
+  if (err != ESP_OK) { LOG_ERR("BLE", "Lab clear lookup failed: %s", esp_err_to_name(err)); return false; }
+  err = nvs_open(BindingNamespace, NVS_READWRITE, &handle);
+  if (err == ESP_OK) {
+    err = nvs_erase_key(handle, "lab-peer");
+    if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    if (err == ESP_OK) err = nvs_commit(handle);
+    size_t size = 0;
+    if (err == ESP_OK && nvs_get_blob(handle, "lab-peer", nullptr, &size) != ESP_ERR_NVS_NOT_FOUND) err = ESP_FAIL;
+    nvs_close(handle);
+  }
+  if (err != ESP_OK) LOG_ERR("BLE", "Home Lab selection clear failed: %s", esp_err_to_name(err));
+  return err == ESP_OK;
+}
+#endif
 #endif

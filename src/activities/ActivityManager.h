@@ -1,5 +1,6 @@
 #pragma once
 #include <HeapDiagnostics.h>
+#include <BleLabConfig.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -136,6 +137,9 @@ class ActivityManager {
 
   void begin(uint32_t renderTaskStackBytes = 16384);
   void loop();
+#if CROSSINK_BLE_LAB
+  int prepareBleLabRestart(); // 0: wait; -1: refused/save failure; 1: renderer parked
+#endif
 #if CROSSINK_HEAP_DIAGNOSTICS
   // Caller holds RenderLock; reject even a paused reader underneath Settings.
   bool diagnosticCanReclaimFonts() const;

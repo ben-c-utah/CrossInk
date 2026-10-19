@@ -1,6 +1,10 @@
 #pragma once
 
 #include <AppCapabilities.h>
+#include <BleLabConfig.h>
+#if CROSSINK_BLE_LAB
+#include "BleLabPolicy.h"
+#endif
 #if CROSSINK_APP_CAP_BLE_PAGE_TURNER
 #include <cstdint>
 #include <BleKeyboardHost.h>
@@ -24,6 +28,14 @@ class HalBlePageTurner {
   uint8_t failure() const { return failureReasons; }
   bool scan();
   bool connect(uint8_t index);
+#if CROSSINK_BLE_LAB
+  bool labConnectedPeer(BleLabPolicy::Selection& out) const;
+  bool labPeerConnected(const BleBindings::Peer& peer) const;
+  bool labConnectSaved(const BleBindings::Peer& peer);
+  bool labLoadSelection(BleLabPolicy::Selection& out, bool& present);
+  bool labSaveSelection(const BleLabPolicy::Selection& value);
+  bool labClearSelection();
+#endif
   using SavedDevice = freeink::PairedHidDevice;
   using ForgetResult = freeink::bleforget::Result;
   static constexpr uint8_t MaxSavedDevices = 14; // Four metadata, six credential, four mapping identities.
@@ -62,6 +74,7 @@ class HalBlePageTurner {
   bool bindingsInvalid = false;
   BleBindings::Peer pairedPeer() const;
   bool loadBindings();
+  bool connectAddress(const char* address);
   void completeLearning();
   void discardInput();
 #if CROSSINK_BLE_INPUT_DIAGNOSTICS

@@ -1,5 +1,6 @@
 #pragma once
 #include <HalDisplay.h>
+#include <BleLabConfig.h>
 
 #include <array>
 #include <functional>
@@ -33,6 +34,13 @@ class HomeActivity final : public Activity {
   std::unique_ptr<CoverGridHomeUi> coverGridUi;
   bool gridHasContinueReading = false;
   int selectorIndex = 0;
+#if CROSSINK_BLE_LAB
+  bool labEnabled() const;
+  bool labRestarting() const;
+  bool labInput();
+  void labActivate(int index);
+  void labRender(int top);
+#endif
   int lastCarouselBookIndex = 0;  // remembered position when leaving carousel row
   int carouselCoverTouchDownIndex = -1;
   bool carouselCoverTouchDownWasSelected = false;
@@ -148,7 +156,13 @@ class HomeActivity final : public Activity {
   void render(RenderLock&&) override;
   bool isHomeActivity() const override { return true; }
   bool allowPowerAsConfirmInReaderMode() const override { return quickActionsPopup.isActive(); }
-  bool blocksGlobalInput() const override { return quickActionsPopup.isActive(); }
+  bool blocksGlobalInput() const override {
+    return quickActionsPopup.isActive()
+#if CROSSINK_BLE_LAB
+        || labRestarting()
+#endif
+        ;
+  }
   bool handleShortcutAction(CrossPointSettings::SHORT_PWRBTN action) override;
   std::string getCurrentBookPath() const override;
   std::string getCurrentBookTitle() const override;

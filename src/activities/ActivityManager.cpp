@@ -984,7 +984,14 @@ void ActivityManager::goToSettings(const bool dismissOnUpSwipe) {
     preferredHomeBookPath = stackActivities.back()->getCurrentBookPath();
     returningHomeThroughSettings = true;
   }
-  replaceActivity(std::make_unique<SettingsActivity>(renderer, mappedInput, dismissOnUpSwipe));
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("before Settings object construction (Home still alive)");
+#endif
+  auto settings = std::make_unique<SettingsActivity>(renderer, mappedInput, dismissOnUpSwipe);
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("after Settings object construction (Home still alive)");
+#endif
+  replaceActivity(std::move(settings));
 }
 
 void ActivityManager::goToFileBrowser(std::string path) {
@@ -1420,5 +1427,22 @@ bool ActivityManager::diagnosticCanReclaimFonts() const {
   if (pendingActivity && pendingActivity->isBookReaderActivity()) return false;
   for (const auto& activity : stackActivities) if (activity->isBookReaderActivity()) return false;
   return true;
+}
+#endif
+
+#if CROSSINK_BLE_LAB
+int ActivityManager::prepareBleLabRestart() {
+  RenderLock lock(RenderLock::Mode::Try);
+  if (!lock.ownsLock()) return 0;
+  if (!currentActivity || !currentActivity->isHomeActivity() || !diagnosticCanReclaimFonts()) return -1;
+  if (pendingAction != PendingAction::None) return 0;
+  if (!SETTINGS.saveToFile() || !APP_STATE.saveToFile()) {
+    LOG_ERR("BLELAB", "Restart refused: could not save current settings/session");
+    return -1;
+  }
+  // No render can be active while this lock is held. Park only for an imminent
+  // main-loop restart; the caller returns from this method (unlocking) first.
+  vTaskSuspend(renderTaskHandle);
+  return 1;
 }
 #endif

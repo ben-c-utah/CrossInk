@@ -276,7 +276,12 @@ SettingsActivity::SettingsActivity(GfxRenderer& renderer, MappedInputManager& ma
       view(view),
       entryOrientation(renderer.getOrientation()),
       uiTarget(makeUiTarget(renderer)),
-      app(uiTarget, uiTarget.deviceContext()) {}
+      app(uiTarget, uiTarget.deviceContext()) {
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Settings constructor complete");
+  HeapDiagnostics::allocation("Settings.object", this, sizeof(*this));
+#endif
+}
 
 void SettingsActivity::rebuildSettingsLists() {
   displaySettings.clear();
@@ -314,6 +319,10 @@ void SettingsActivity::rebuildSettingsLists() {
 
   dictionaryRegistry.refreshIfDirty();
   const auto allSettings = getSettingsList(needsFonts ? &sdFontSystem.registry() : nullptr, &dictionaryRegistry);
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Settings allSettings constructed");
+  if (allSettings.capacity()) HeapDiagnostics::allocation("Settings.allSettings temporary", allSettings.data(), allSettings.capacity() * sizeof(SettingInfo));
+#endif
   displaySettings = buildGroupedDisplaySettingsList(allSettings);
 #ifndef SIMULATOR
   if (BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) {
@@ -751,7 +760,13 @@ void SettingsActivity::onEnter() {
   if (!isFileBrowserView()) {
     // Dictionary names and paths are needed only while the full settings tree
     // is open. Keep the catalog out of the lightweight File Browser editor.
+#if CROSSINK_HEAP_DIAGNOSTICS
+    HeapDiagnostics::snapshot("Settings before dictionary discovery");
+#endif
     dictionaryRegistry.discover();
+#if CROSSINK_HEAP_DIAGNOSTICS
+    HeapDiagnostics::snapshot("Settings after dictionary discovery");
+#endif
   }
 
   selectedCategoryIndex = isFileBrowserView() ? 3 : 0;
@@ -765,7 +780,14 @@ void SettingsActivity::onEnter() {
     syncQuickResumeTimeoutForSleepScreen(/*sleepScreenChanged=*/true, /*quickResumeTimeoutChanged=*/false);
   }
 
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Settings before menu construction");
+#endif
   rebuildSettingsLists();
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Settings after menu construction (temporary destroyed)");
+  logDiagnosticSettings("entered");
+#endif
 
   uiReady = false;
   visibleRows = 1;
@@ -805,6 +827,10 @@ void SettingsActivity::onRowEvent(const fui::ActionEvent& event, void* user) {
 }
 
 void SettingsActivity::onExit() {
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Settings before cleanup");
+  logDiagnosticSettings("exiting");
+#endif
   if (!isFileBrowserView()) {
     dictionaryRegistry.clear();
     sdFontSystem.releaseRegistry();
@@ -1671,3 +1697,45 @@ void SettingsActivity::render(RenderLock&&) {
   // Always use standard refresh for settings screen
   renderer.displayBuffer();
 }
+
+#if CROSSINK_HEAP_DIAGNOSTICS
+void SettingsActivity::logDiagnosticSettings(const char* stage) const {
+  struct Entry { const char* name; std::vector<SettingInfo> SettingsActivity::* field; };
+  static const Entry entries[] = {
+    {"displaySettings", &SettingsActivity::displaySettings},
+    {"displaySleepSettings", &SettingsActivity::displaySleepSettings},
+    {"displayFrontlightSettings", &SettingsActivity::displayFrontlightSettings},
+    {"readerSettings", &SettingsActivity::readerSettings},
+    {"readerFontSettings", &SettingsActivity::readerFontSettings},
+    {"readerPageLayoutSettings", &SettingsActivity::readerPageLayoutSettings},
+    {"readerScreenMarginSettings", &SettingsActivity::readerScreenMarginSettings},
+    {"controlsSettings", &SettingsActivity::controlsSettings},
+    {"controlsPowerSettings", &SettingsActivity::controlsPowerSettings},
+    {"controlsHomeButtonSettings", &SettingsActivity::controlsHomeButtonSettings},
+    {"controlsFrontButtonSettings", &SettingsActivity::controlsFrontButtonSettings},
+    {"controlsSideButtonSettings", &SettingsActivity::controlsSideButtonSettings},
+    {"controlsTapsGesturesSettings", &SettingsActivity::controlsTapsGesturesSettings},
+    {"controlsTwoFingerSwipeSettings", &SettingsActivity::controlsTwoFingerSwipeSettings},
+    {"controlsEdgeGestureSettings", &SettingsActivity::controlsEdgeGestureSettings},
+    {"systemSettings", &SettingsActivity::systemSettings},
+    {"systemDeviceSettings", &SettingsActivity::systemDeviceSettings},
+    {"systemFilesCacheSettings", &SettingsActivity::systemFilesCacheSettings},
+    {"fileBrowserSettings", &SettingsActivity::fileBrowserSettings},
+    {"systemReadingStatsSettings", &SettingsActivity::systemReadingStatsSettings},
+    {"systemGlobalStatsSettings", &SettingsActivity::systemGlobalStatsSettings},
+  };
+  LOG_INF("HDBG", "Settings menus %s sizeof(SettingInfo)=%u", stage, unsigned(sizeof(SettingInfo)));
+  for (const auto& entry : entries) {
+    const auto& values = this->*entry.field;
+    if (values.capacity()) HeapDiagnostics::allocation(entry.name, values.data(), values.capacity() * sizeof(SettingInfo));
+    uint32_t nestedBytes = 0, nestedBlocks = 0;
+    for (const auto& value : values) {
+      nestedBytes += value.enumValues.capacity() * sizeof(StrId) + value.enumRawValues.capacity() +
+                     value.enumStringValues.capacity() * sizeof(std::string);
+      nestedBlocks += (value.enumValues.capacity() != 0) + (value.enumRawValues.capacity() != 0) + (value.enumStringValues.capacity() != 0);
+    }
+    LOG_INF("HDBG", "%s size=%u capacity=%u nested vector bytes=%u blocks=%u", entry.name,
+            unsigned(values.size()), unsigned(values.capacity()), unsigned(nestedBytes), unsigned(nestedBlocks));
+  }
+}
+#endif

@@ -1,3 +1,14 @@
+## [BLE v9-dev] - 2026-10-19
+
+### Added
+
+- X4 Pro diagnostic-only Bluetooth Lab on basic Lyra Home: guarded radio controls, explicitly selected Kobo reconnection, confirmed software restart, and boundary memory readings.
+- Bounded Settings allocation diagnostics for comparing Bluetooth restart behavior without opening a book.
+
+### Changed
+
+- Diagnostic firmware shows its build revision; Bluetooth status has inset spacing and font-cache reclamation reports its measured result on screen.
+
 ## [v1.6.1] - 2026-10-03
 
 ### Added

@@ -4,6 +4,7 @@
 #include <I18n.h>
 #include <FontCacheManager.h>
 #include <FontDecompressor.h>
+#include "util/BleLab.h"
 
 #include <cstdio>
 #include <cstring>
@@ -29,6 +30,9 @@ void BleSettingsActivity::onEnter() {
 }
 
 void BleSettingsActivity::snapshot() {
+#if CROSSINK_BLE_LAB
+  labResult = bleLab.view().result;
+#endif
   status = blePageTurner.status();
   enabled = blePageTurner.enabled();
   failureReasons = blePageTurner.failure();
@@ -45,6 +49,9 @@ void BleSettingsActivity::snapshot() {
 }
 
 void BleSettingsActivity::onExit() {
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Bluetooth settings exit");
+#endif
   blePageTurner.cancelLearning();
   Activity::onExit();
 }
@@ -82,6 +89,12 @@ void BleSettingsActivity::confirmForget(bool all) {
 void BleSettingsActivity::performForget() {
   std::snprintf(resultName, sizeof(resultName), "%s", pendingDevice.name[0] ? pendingDevice.name : pendingDevice.addr);
   forgetResult = pendingAll ? blePageTurner.forgetAll() : blePageTurner.forget(pendingDevice);
+#if CROSSINK_BLE_LAB
+  if (forgetResult.ok() && !bleLab.clearSelection(pendingAll, pendingDevice.addr, pendingDevice.addrType)) {
+    forgetResult.code = freeink::bleforget::Code::Mappings;
+    hasLabResult = true;
+  }
+#endif
   hasForgetResult = true; // Kept until the user's next relevant action, not a timer.
   snapshot();
   if (managing) refreshSaved();
@@ -91,16 +104,24 @@ void BleSettingsActivity::performForget() {
 void BleSettingsActivity::reclaimDiagnosticCaches() {
   // activate() runs under loop's RenderLock; also reject a paused reader on the stack.
   auto* cache = renderer.getFontCacheManager();
+  cacheRan = false;
   if (blePageTurner.resident() || !activityManager.diagnosticCanReclaimFonts() || !cache || cache->isScanning()) {
+    cacheResult = !cache ? StrId::STR_BLE_CACHE_UNAVAILABLE : blePageTurner.resident() ? StrId::STR_BLE_CACHE_RADIO :
+                  !activityManager.diagnosticCanReclaimFonts() ? StrId::STR_BLE_CACHE_READER : StrId::STR_BLE_CACHE_BUSY;
     LOG_ERR("HDBG", "Cache experiment refused: BLE must be fully Off, no retained reader, font scan inactive");
     return;
   }
+  cacheBefore = heap_caps_get_largest_free_block(HeapDiagnostics::Internal);
   HeapDiagnostics::snapshot("reclaim before", "", true);
   renderer.logHeapAllocations();
   cache->logAllocations();
   if (auto* decompressor = cache->getDecompressor()) decompressor->clearCache();
   HeapDiagnostics::snapshot("reclaim after built-in fonts");
   cache->releaseSdFontCaches();
+  cacheAfter = heap_caps_get_largest_free_block(HeapDiagnostics::Internal);
+  cacheRan = true;
+  cacheResult = cacheAfter > cacheBefore ? StrId::STR_BLE_CACHE_IMPROVED :
+                cacheAfter == cacheBefore ? StrId::STR_BLE_CACHE_UNCHANGED : StrId::STR_BLE_CACHE_DECREASED;
   HeapDiagnostics::snapshot("reclaim after all fonts BEFORE repaint", "", true);
   cache->logAllocations();
   diagnosticRepaint = true;
@@ -116,6 +137,19 @@ void BleSettingsActivity::activate() {
     return;
   }
   hasForgetResult = false;
+#if CROSSINK_HEAP_DIAGNOSTICS
+  cacheResult = StrId::STR_NONE_OPT;
+#endif
+#if CROSSINK_BLE_LAB
+  hasLabResult = false;
+  if (!configuring && connected() && selected == deviceStart() + found + 2 + CROSSINK_HEAP_DIAGNOSTICS) {
+    bleLab.selectConnected();
+    hasLabResult = true;
+    labResult = bleLab.view().result;
+    requestUpdate();
+    return;
+  }
+#endif
   if (configuring) {
     if (learning == BleBindings::Learning::Waiting) return;
     if (selected < 2) blePageTurner.beginLearning(static_cast<BleBindings::Action>(selected));
@@ -230,12 +264,28 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
   }
   // Use the SDK's wrapped text layout and measured height, rather than a
   // fixed single-line band. Each independent refusal remains readable.
-  const auto message = [&](const char* text) {
-    auto style = screen.theme().smallText;
+  const auto message = [&](const char* text, bool primary = false) {
+    auto style = primary ? screen.theme().bodyText : screen.theme().smallText;
+    style.bold = primary;
     style.maxLines = 8;
-    const auto size = fui::measureWrappedText(screen.target(), text, style, screen.body().width);
-    screen.target().text(screen.takeTop(size.height), text, style);
+    const int16_t side = metrics.contentSidePadding;
+    const auto size = fui::measureWrappedText(screen.target(), text, style, std::max<int16_t>(1, screen.body().width - 2 * side));
+    const auto band = screen.takeTop(size.height + 8);
+    screen.target().text(band.inset(fui::Insets{4, side, 4, side}), text, style);
   };
+#if CROSSINK_HEAP_DIAGNOSTICS
+  if (self.cacheResult != StrId::STR_NONE_OPT) {
+    message(I18N.get(self.cacheResult), true);
+    if (self.cacheRan) {
+      char measured[112];
+      std::snprintf(measured, sizeof(measured), tr(STR_BLE_CACHE_SIZES), unsigned(self.cacheBefore), unsigned(self.cacheAfter));
+      message(measured);
+    }
+  }
+#endif
+#if CROSSINK_BLE_LAB
+  if (self.hasLabResult) message(I18N.get(self.labResult), true);
+#endif
   if (self.hasForgetResult) {
     using Code = freeink::bleforget::Code;
     char result[128];
@@ -243,16 +293,16 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
     const auto code = self.forgetResult.code;
     if (code == Code::Done || code == Code::Absent) {
       if (all) {
-        message(code == Code::Done ? tr(STR_BLE_ALL_FORGOTTEN) : tr(STR_BLE_NONE_SAVED));
+        message(code == Code::Done ? tr(STR_BLE_ALL_FORGOTTEN) : tr(STR_BLE_NONE_SAVED), true);
         message(tr(STR_BLE_ALL_RADIO_OFF));
       }
       else {
         std::snprintf(result, sizeof(result), code == Code::Done ? tr(STR_BLE_DEVICE_FORGOTTEN) : tr(STR_BLE_ALREADY_FORGOTTEN), self.resultName);
-        message(result);
+        message(result, true);
       }
     } else {
       if (all) message(tr(STR_BLE_FORGET_ALL_FAILED));
-      else { std::snprintf(result, sizeof(result), tr(STR_BLE_FORGET_FAILED), self.resultName); message(result); }
+      else { std::snprintf(result, sizeof(result), tr(STR_BLE_FORGET_FAILED), self.resultName); message(result, true); }
       switch (code) {
         case Code::Busy: message(tr(STR_BLE_FORGET_BUSY)); break;
         case Code::RadioOff: message(tr(STR_BLE_FORGET_RADIO_OFF)); break;
@@ -264,13 +314,13 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
       }
     }
   } else if (self.failureReasons) {
-    if (self.failureReasons & HalBlePageTurner::Memory) message(tr(STR_BLE_LOW_MEMORY));
-    if (self.failureReasons & HalBlePageTurner::Wifi) message(tr(STR_BLE_WIFI_ACTIVE));
-    if (self.failureReasons & HalBlePageTurner::Initialization) message(tr(STR_BLE_INIT_FAILED));
-    if (self.failureReasons & HalBlePageTurner::Connection) message(tr(STR_BLE_CONNECT_FAILED));
-    if (self.failureReasons & HalBlePageTurner::ButtonStorage) message(tr(STR_BLE_BINDINGS_STORAGE_ERROR));
+    if (self.failureReasons & HalBlePageTurner::Memory) message(tr(STR_BLE_LOW_MEMORY), true);
+    if (self.failureReasons & HalBlePageTurner::Wifi) message(tr(STR_BLE_WIFI_ACTIVE), true);
+    if (self.failureReasons & HalBlePageTurner::Initialization) message(tr(STR_BLE_INIT_FAILED), true);
+    if (self.failureReasons & HalBlePageTurner::Connection) message(tr(STR_BLE_CONNECT_FAILED), true);
+    if (self.failureReasons & HalBlePageTurner::ButtonStorage) message(tr(STR_BLE_BINDINGS_STORAGE_ERROR), true);
   } else {
-    message(hint);
+    message(hint, true);
     if (self.status == HalBlePageTurner::Status::Connected) message(self.connectedName);
   }
   if (self.configuring) {
@@ -314,6 +364,9 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
 #if CROSSINK_HEAP_DIAGNOSTICS
     self.items[first + self.found + 2].label = tr(STR_BLE_DIAGNOSTIC_RECLAIM);
     self.items[first + self.found + 2].enabled = !blePageTurner.resident() && activityManager.diagnosticCanReclaimFonts();
+#endif
+#if CROSSINK_BLE_LAB
+    if (self.connected()) self.items[first + self.found + 2 + CROSSINK_HEAP_DIAGNOSTICS].label = tr(STR_BLE_LAB_USE_CONNECTED);
 #endif
     self.items[first + self.found].sectionHeading = tr(STR_BLE_DEVICE_ACTIONS);
     if (self.found) self.items[first].sectionHeading = tr(STR_BLE_DISCOVERED_DEVICES);

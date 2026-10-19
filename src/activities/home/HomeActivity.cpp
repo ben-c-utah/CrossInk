@@ -1,4 +1,12 @@
 #include "HomeActivity.h"
+#if CROSSINK_BLE_LAB
+#include <FreeInkUIGfxRenderer.h>
+#include <components/controls/button.h>
+#include <AppVersion.h>
+#include "util/BleLab.h"
+#include "components/OptionPopup.h"
+#include "components/TouchRegistry.h"
+#endif
 
 #include <Bitmap.h>
 #include <Epub.h>
@@ -16,6 +24,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <string>
@@ -42,6 +51,18 @@
 #include "fontIds.h"
 
 namespace {
+#if CROSSINK_BLE_LAB
+// Static, fixed-size UI state avoids a new navigation-time heap allocation.
+struct LabUiState { BleLab::View view; OptionPopup confirmation; uint32_t paintedRevision = 0; } labUi;
+// Called under RenderLock, only after a dialog callback has returned. Rebuild
+// in place (no heap allocation) so cancelled dialogs retain no string buffers.
+void resetLabConfirmation() {
+  std::destroy_at(&labUi.confirmation);
+  std::construct_at(&labUi.confirmation);
+}
+constexpr int LabHeight = 146;
+constexpr int LabTouchFirst = 100;
+#endif
 constexpr uint32_t CAROUSEL_CACHE_MAGIC = 0x43434152;  // "CCAR"
 // Cached frames contain only carousel artwork. Bump this whenever its
 // rendering changes so stale snapshots are rebuilt after OTA.
@@ -546,6 +567,9 @@ int HomeActivity::getMenuItemCount() const {
   if (hasBookmarks || hasClippings) {
     count++;
   }
+#if CROSSINK_BLE_LAB
+  if (labEnabled()) count += 3;
+#endif
   return count;
 }
 
@@ -811,6 +835,13 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
 
 void HomeActivity::onEnter() {
   Activity::onEnter();
+#if CROSSINK_BLE_LAB
+  if (labEnabled()) {
+    bleLab.enterHome();
+    RenderLock lock(*this);
+    labUi.view = bleLab.view();
+  }
+#endif
 
   hasOpdsServers = OPDS_STORE.hasServers();
   if (UITheme::hasCoverGridHome()) {
@@ -1059,6 +1090,9 @@ void HomeActivity::updateHighlightedBookContext(const bool allowChapterTitleRead
 }
 
 void HomeActivity::onExit() {
+#if CROSSINK_BLE_LAB
+  resetLabConfirmation();
+#endif
   Activity::onExit();
 
   coverGridUi.reset();
@@ -1366,6 +1400,9 @@ void HomeActivity::preRenderCarouselFrames() {
 }
 
 void HomeActivity::loop() {
+#if CROSSINK_BLE_LAB
+  if (labEnabled() && labInput()) return;
+#endif
   if (quickActionsLongPowerHandled) {
     if (!mappedInput.isPressed(MappedInputManager::Button::Power)) {
       quickActionsLongPowerHandled = false;
@@ -1727,6 +1764,12 @@ void HomeActivity::loop() {
   };
 
   auto activateSelectedHomeItem = [this, visibleBookCount, &activateHomeMenuAction]() {
+#if CROSSINK_BLE_LAB
+    if (labEnabled() && selectorIndex >= getMenuItemCount() - 3) {
+      labActivate(selectorIndex - (getMenuItemCount() - 3));
+      return;
+    }
+#endif
     const auto& metrics = UITheme::getInstance().getMetrics();
     if (!metrics.homeContinueReadingInMenu && selectorIndex < visibleBookCount) {
       onSelectBook(recentBooks[selectorIndex].path);
@@ -1750,7 +1793,11 @@ void HomeActivity::loop() {
     return;
   }
 
-  if (!isCarousel && canSwapHomeBook() && mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
+  if (!isCarousel && canSwapHomeBook() &&
+#if CROSSINK_BLE_LAB
+      !(labEnabled() && selectorIndex >= getMenuItemCount() - 3) &&
+#endif
+      mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
       mappedInput.getHeldTime() >= HOME_BOOK_SWAP_LONG_PRESS_MS) {
     homeBookSwapLongPressHandled = true;
     showNextRecentBookOnHome();
@@ -2042,6 +2089,9 @@ bool HomeActivity::handleShortcutAction(const CrossPointSettings::SHORT_PWRBTN a
 }
 
 void HomeActivity::render(RenderLock&&) {
+#if CROSSINK_BLE_LAB
+  if (labEnabled() && labUi.confirmation.processRender(renderer, mappedInput)) return;
+#endif
   if (quickActionsPopup.processRender(renderer, mappedInput)) {
     return;
   }
@@ -2204,6 +2254,16 @@ void HomeActivity::render(RenderLock&&) {
   auto menuItems = buildSelectableHomeMenuItems(hasOpdsServers, hasReadingStats, hasBookmarks, hasClippings,
                                                 metrics.homeContinueReadingInMenu && !recentBooks.empty());
   int homeCoverTileHeight = metrics.homeCoverTileHeight;
+#if CROSSINK_BLE_LAB
+  if (labEnabled()) {
+    // Use unused space first; only shorten the artwork if optional menu rows
+    // otherwise leave insufficient room. Normal Home commands keep their style.
+    const int menuRows = std::min(7, menuItems.size());
+    const int needed = menuRows * (metrics.menuRowHeight + metrics.menuSpacing) - metrics.menuSpacing;
+    homeCoverTileHeight = std::max(0, std::min(homeCoverTileHeight,
+        pageHeight - metrics.homeTopPadding - metrics.homeMenuTopOffset - metrics.buttonHintsHeight - needed - LabHeight));
+  }
+#endif
   if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::CLASSIC) {
     // Keep the four always-present actions clear of the button-hint strip on
     // shorter displays; any optional actions paginate below them.
@@ -2237,13 +2297,20 @@ void HomeActivity::render(RenderLock&&) {
 
   const bool isCarouselTheme =
       static_cast<CrossPointSettings::UI_THEME>(SETTINGS.uiTheme) == CrossPointSettings::UI_THEME::LYRA_CAROUSEL;
-  const int menuSelectedIndex = isCarouselTheme && mappedInput.hasTouchHardware()
+  const int menuSelectedIndex =
+#if CROSSINK_BLE_LAB
+      labEnabled() && selectorIndex >= getMenuItemCount() - 3 ? -1 :
+#endif
+      isCarouselTheme && mappedInput.hasTouchHardware()
                                     ? carouselMenuTouchDownIndex
                                     : selectorIndex - getHomeMenuSelectionOffset(recentBooks);
   GUI.drawButtonMenu(
       renderer, Rect{0, menuStartY, pageWidth, menuHeight}, static_cast<int>(menuItems.size()), menuSelectedIndex,
       [&menuItems](int index) { return menuItems[index].label; },
       [&menuItems](int index) { return menuItems[index].icon; });
+#if CROSSINK_BLE_LAB
+  if (labEnabled()) labRender(pageHeight - metrics.buttonHintsHeight - LabHeight);
+#endif
 
   const char* readLabel = recentBooks.empty() ? "" : tr(STR_READ);
   const auto labels = isCarouselTheme
@@ -2388,3 +2455,100 @@ void HomeActivity::onSavedItemsOpen() {
   startActivityForResult(std::make_unique<SavedItemsHomeActivity>(renderer, mappedInput),
                          [this](const ActivityResult&) { requestUpdate(); });
 }
+
+#if CROSSINK_BLE_LAB
+bool HomeActivity::labEnabled() const { return SETTINGS.uiTheme == CrossPointSettings::UI_THEME::LYRA; }
+bool HomeActivity::labRestarting() const { return labEnabled() && bleLab.restarting(); }
+
+bool HomeActivity::labInput() {
+  int action = -1;
+  {
+    RenderLock lock(*this, RenderLock::Mode::Try);
+    if (!lock.ownsLock()) return true;
+    const auto next = bleLab.view();
+    if (next.revision != labUi.view.revision || next.radio != labUi.view.radio || next.link != labUi.view.link) {
+      labUi.view = next;
+      requestUpdate();
+    }
+    if (labUi.confirmation.isActive()) {
+      labUi.confirmation.handleInput(mappedInput, [this] { requestUpdate(); });
+      if (!labUi.confirmation.isActive()) resetLabConfirmation();
+      return true;
+    }
+    if (next.restarting) return true;
+    int item = -1;
+    if (mappedInput.wasItemTouchedDown(item) && item >= LabTouchFirst && item < LabTouchFirst + 3) {
+      selectorIndex = getMenuItemCount() - 3 + item - LabTouchFirst;
+      requestUpdate();
+      return true;
+    }
+    if (mappedInput.wasItemTapped(item) && item >= LabTouchFirst && item < LabTouchFirst + 3) {
+      selectorIndex = getMenuItemCount() - 3 + item - LabTouchFirst;
+      action = item - LabTouchFirst;
+    }
+  }
+  if (action >= 0) { labActivate(action); return true; }
+  return false;
+}
+
+void HomeActivity::labActivate(int index) {
+  RenderLock lock(*this, RenderLock::Mode::Try);
+  if (!lock.ownsLock()) return;
+  if (index == 2) {
+    const StrId options[] = {StrId::STR_CANCEL, StrId::STR_BLE_LAB_RESTART};
+    labUi.confirmation.show(StrId::STR_BLE_LAB_RESTART_PROMPT, options, 2, 0, [](int selected) {
+      if (selected == 1) bleLab.request(BleLabPolicy::Command::Restart);
+    });
+  } else if (!labUi.view.busy) {
+    bleLab.request(index == 0 ? BleLabPolicy::Command::Toggle : BleLabPolicy::Command::Connect);
+  }
+  labUi.view = bleLab.view();
+  requestUpdate();
+}
+
+void HomeActivity::labRender(int top) {
+  namespace fui = freeink::ui;
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  int bezelTop, bezelRight, bezelBottom, bezelLeft;
+  renderer.getOrientedViewableTRBL(&bezelTop, &bezelRight, &bezelBottom, &bezelLeft);
+  const int side = std::max(metrics.contentSidePadding, bezelLeft);
+  const int width = renderer.getScreenWidth() - side - std::max(metrics.contentSidePadding, bezelRight);
+  // Native button/frame objects are bounded render-stack scratch, reused for all
+  // three controls. This avoids a retained FreeInkApp or dynamic list allocation.
+  fui::GfxRendererFrame<1> native(renderer, UI_10_FONT_ID, UI_10_FONT_ID, UI_12_FONT_ID);
+  fui::ButtonProps props;
+  props.text.font = fui::GfxRendererTarget::FONT_SMALL;
+  props.text.maxLines = 2;
+  props.text.align = fui::TextAlign::Center;
+  props.radius = 6;
+  const StrId labels[] = {StrId::STR_BLE_LAB_TOGGLE, StrId::STR_BLE_LAB_CONNECT, StrId::STR_BLE_LAB_RESTART};
+  const int buttonWidth = (width - 12) / 3;
+  for (int i = 0; i < 3; ++i) {
+    const Rect rect{side + i * (buttonWidth + 6), top + 4, buttonWidth, 48};
+    props.label = I18N.get(labels[i]);
+    props.state = selectorIndex == getMenuItemCount() - 3 + i ? fui::StateSelected : fui::StateNormal;
+    props.enabled = i == 2 ? !labUi.view.restarting : !labUi.view.busy;
+    fui::button(native.frame, fui::Rect{int16_t(rect.x), int16_t(rect.y), int16_t(rect.width), int16_t(rect.height)}, props);
+    if (props.enabled) TouchRegistry::getInstance().add(rect, LabTouchFirst + i, TouchRegistry::Item);
+  }
+  static const StrId radios[] = {StrId::STR_BLE_LAB_OFF_STATE, StrId::STR_BLE_LAB_STARTING_STATE,
+      StrId::STR_BLE_LAB_ON_STATE, StrId::STR_BLE_STOPPING, StrId::STR_BLE_LAB_ERROR_STATE};
+  static const StrId links[] = {StrId::STR_NOT_SET, StrId::STR_BLE_LAB_DISCONNECTED, StrId::STR_CONNECTING,
+      StrId::STR_CONNECTED, StrId::STR_BLE_LAB_OTHER_STATE};
+  char text[160];
+  auto style = props.text; style.align = fui::TextAlign::Left; style.maxLines = 2;
+  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_STATE), I18N.get(radios[unsigned(labUi.view.radio)]),
+                I18N.get(links[unsigned(labUi.view.link)]));
+  native.target.text(fui::Rect{int16_t(side), int16_t(top + 56), int16_t(width), 22}, text, style);
+  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_MEMORY), unsigned(labUi.view.free), unsigned(labUi.view.largest));
+  native.target.text(fui::Rect{int16_t(side), int16_t(top + 78), int16_t(width), 22}, text, style);
+  const auto message = labUi.view.result == StrId::STR_NONE_OPT ? StrId::STR_BLE_LAB_SELECT : labUi.view.result;
+  style.bold = true;
+  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_RESULT), I18N.get(message));
+  native.target.text(fui::Rect{int16_t(side), int16_t(top + 100), int16_t(width), 42}, text, style);
+  if (labUi.paintedRevision != labUi.view.revision) {
+    labUi.paintedRevision = labUi.view.revision;
+    HeapDiagnostics::snapshot("Home Lab after repaint");
+  }
+}
+#endif

@@ -3,6 +3,7 @@
 #include <CrossInkHalFrontlight.h>
 #include <FontCacheManager.h>
 #include <FontDecompressor.h>
+#include "util/BleLab.h"
 #include <FreeInkUIGfxRenderer.h>
 #include <FreeInkUIIcon.h>
 #include <FsHelpers.h>
@@ -810,6 +811,9 @@ bool dispatchButtonShortcut(const ButtonShortcutController::Result& result) {
   }
 
   activityManager.loop();
+#if CROSSINK_BLE_LAB
+  if (!deepSleepInProgress) bleLab.tick();
+#endif
   mappedInputManager.clearInjectedReleases();
   return true;
 }
