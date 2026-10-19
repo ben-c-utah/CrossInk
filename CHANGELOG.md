@@ -51,6 +51,7 @@
 
 ### Fixed
 
+- Bluetooth settings group discovered devices separately from commands and use device terminology.
 - Bluetooth settings use the native on/off switch and show readable, specific failure messages.
 - X4 Pro Bluetooth uses PSRAM for eligible NimBLE host allocations, with a measured S3 startup budget and detailed memory refusal logs.
 - Fix Windows firmware builds failing with conflicting Arduino core compile actions.

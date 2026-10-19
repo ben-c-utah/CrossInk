@@ -28,6 +28,7 @@ class HalBlePageTurner {
   uint8_t deviceCount() const { return count; }
   const Device& device(uint8_t index) const { return devices[index]; }
   uint32_t passkey() const { return pairingPasskey; }
+  const char* connectedName() const;
 
  private:
   // Fixed scan snapshot: render never reads the SDK's callback-owned scan list.
@@ -40,6 +41,9 @@ class HalBlePageTurner {
   uint32_t pairingPasskey = 0;
   char selected[18]{};
   BleArrowFilter filter;
+#if CROSSINK_BLE_INPUT_DIAGNOSTICS
+  uint16_t diagnosticEdges = 0;
+#endif
 };
 
 extern HalBlePageTurner blePageTurner;

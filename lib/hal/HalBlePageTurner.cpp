@@ -44,10 +44,14 @@ bool logGuard(const char* stage, const BleMemoryPolicy::Snapshot& heap, const Bl
 
 bool HalBlePageTurner::resident() const { return host().isRunning() || host().isStopping(); }
 bool HalBlePageTurner::enabled() const { return optedIn && host().isRunning(); }
+const char* HalBlePageTurner::connectedName() const { return host().connectedName(); }
 
 bool HalBlePageTurner::enable() {
   if (resident()) return optedIn;
   failureReasons = None;
+#if CROSSINK_BLE_INPUT_DIAGNOSTICS
+  diagnosticEdges = 0;
+#endif
   // BLE needs controller RAM and task stacks even on PSRAM-equipped boards.
   if (!logGuard("preflight", memorySnapshot(), BleMemoryPolicy::Start, &failureReasons)) {
     LOG_ERR("BLE", "Start refused; see individual guard failures above");
@@ -209,6 +213,14 @@ int8_t HalBlePageTurner::poll() {
   while (host().popRawButton(raw)) {
     const int8_t direction = filter.accept(raw.reportId, raw.byteIndex, raw.value, raw.pressed, raw.keycode, raw.mods,
                                            raw.wasRest);
+#if CROSSINK_BLE_INPUT_DIAGNOSTICS
+    if (diagnosticEdges < 256) {
+      ++diagnosticEdges;
+      LOG_INF("BLE", "raw id=%u byte=%u value=%02X pressed=%u usage=%02X mods=%02X rest=%u arrow=%d age=%lu",
+              raw.reportId, raw.byteIndex, raw.value, raw.pressed, raw.keycode, raw.mods, raw.wasRest, direction,
+              static_cast<unsigned long>(millis() - raw.atMs));
+    }
+#endif
     // Never replay an old settings/overlay key after a slow render or transition.
     if (direction && millis() - raw.atMs <= 250 && host().isConnected() &&
         std::strcmp(selected, host().connectedAddr()) == 0) {

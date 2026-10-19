@@ -22,6 +22,7 @@ void BleSettingsActivity::onEnter() {
   app.on(1, rowEvent, this);
   app.setScreen(screen, this);
   snapshot();
+  listNav.reset(selected);
   requestUpdate();
 }
 
@@ -31,6 +32,7 @@ void BleSettingsActivity::snapshot() {
   failureReasons = blePageTurner.failure();
   passkey = blePageTurner.passkey();
   found = blePageTurner.deviceCount();
+  std::snprintf(connectedName, sizeof(connectedName), "%s", blePageTurner.connectedName());
   for (uint8_t i = 0; i < found; ++i) std::memcpy(names[i], blePageTurner.device(i).name, sizeof(names[i]));
   if (selected >= 3 + found) selected = 0;
 }
@@ -42,10 +44,10 @@ void BleSettingsActivity::activate() {
     else blePageTurner.enable();
   } else if (selected == 1) {
     blePageTurner.scan();
-  } else if (selected == 2) {
+  } else if (selected == 2 + found) {
     blePageTurner.forget();
   } else {
-    blePageTurner.connect(static_cast<uint8_t>(selected - 3));
+    blePageTurner.connect(static_cast<uint8_t>(selected - 2));
   }
   snapshot();
   requestUpdate();
@@ -125,16 +127,20 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
     if (self.failureReasons & HalBlePageTurner::Connection) message(tr(STR_BLE_CONNECT_FAILED));
   } else {
     message(hint);
+    if (self.status == HalBlePageTurner::Status::Connected) message(self.connectedName);
   }
   message(tr(STR_BLE_SESSION_HINT));
+  for (int i = 0; i < 3 + self.found; ++i) self.items[i] = {};
   self.items[0].label = tr(STR_BLE_ENABLE);
   self.items[0].toggle = true;
   self.items[0].toggleChecked = self.enabled;
   self.items[0].value = nullptr;
   self.items[1].label = tr(STR_BLE_SCAN);
-  self.items[2].label = tr(STR_BLE_FORGET);
+  self.items[2 + self.found].label = tr(STR_BLE_FORGET);
+  self.items[2 + self.found].sectionHeading = tr(STR_BLE_DEVICE_ACTIONS);
+  if (self.found) self.items[2].sectionHeading = tr(STR_BLE_DISCOVERED_DEVICES);
   for (int i = 0; i < 3 + self.found; ++i) {
-    if (i >= 3) self.items[i].label = self.names[i - 3];
+    if (i >= 2 && i < 2 + self.found) self.items[i].label = self.names[i - 2];
     self.items[i].actionValue = static_cast<int16_t>(i);
   }
   fui::ListProps props;
@@ -146,21 +152,25 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
   props.valueInset = 8;
   props.labelText = screen.theme().bodyText;
   props.labelText.maxLines = 2;
-  self.rows = configureUiList(props, screen.theme(), screen.body());
-  if (self.rows < 1) self.rows = 1;
-  if (self.selected < self.top) self.top = self.selected;
-  if (self.selected >= self.top + self.rows) self.top = self.selected - self.rows + 1;
-  self.top = scrollListBy(self.top, 0, self.rows, props.count);
-  props.topIndex = self.top;
+  props.headerText = screen.theme().smallText;
+  props.headerText.bold = true;
+  configureUiList(props, screen.theme(), screen.body());
+  if (self.listNav.selected.exchange(self.selected) != self.selected) self.listNav.followOnBuild.store(true);
+  self.listNav.syncToProps(screen.body(), props.rowHeight, props.rowGap, props.count, props);
   screen.list(props);
 }
 
 void BleSettingsActivity::render(RenderLock&&) {
-  renderer.clearScreen();
-  const Rect header = TouchHeaderBackButton::headerRect(renderer, mappedInput);
-  TouchHeaderBackButton::draw(renderer, target, header, tr(STR_BLE_PAGE_TURNER), false);
   uiReady = false;
-  app.render();
+  // Native viewport feedback accounts for wrapped rows and section headings.
+  // A corrective layout pass happens in RAM, before the single e-ink refresh.
+  for (int pass = 0; pass < 2; ++pass) {
+    renderer.clearScreen();
+    const Rect header = TouchHeaderBackButton::headerRect(renderer, mappedInput);
+    TouchHeaderBackButton::draw(renderer, target, header, tr(STR_BLE_PAGE_TURNER), false);
+    app.render();
+    if (!listNav.consumeRebuildNeeded()) break;
+  }
   uiReady = true;
   const auto labels = mappedInput.mapLabels(mappedInput.withBackArrow(tr(STR_BACK)), tr(STR_SELECT), tr(STR_DIR_UP),
                                            tr(STR_DIR_DOWN));

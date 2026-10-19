@@ -63,4 +63,18 @@ class BuildIdentityTest(unittest.TestCase):
         self.assertIn("CROSSINK_GIT_DIRTY", defines)
         self.assertIn("1.6.1-x4-pro", defines["CROSSINK_VERSION"])
 
+    @patch("os.name", "nt")
+    def test_ble_diagnostic_identity(self):
+        env = Env("x4-pro-ble-diagnostic")
+        MODULE["inject_version"](env)
+        self.assertEqual(env.middleware, [])
+        defines = dict(d for d in env.defines if isinstance(d, tuple))
+        self.assertIn("1.6.1-x4-pro-ble-diagnostic", defines["CROSSINK_VERSION"])
+        self.assertIn("ble-diagnostic", defines["CROSSINK_BUILD_ENV"])
+        normal = Env("x4-pro")
+        MODULE["inject_version"](normal)
+        normal_defines = dict(d for d in normal.defines if isinstance(d, tuple))
+        self.assertEqual(defines["CROSSINK_VERSION"].replace("-ble-diagnostic", ""),
+                         normal_defines["CROSSINK_VERSION"])
+
 if __name__ == "__main__": unittest.main()

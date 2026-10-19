@@ -20,14 +20,14 @@ class BleSettingsActivity final : public Activity {
   using UiApp = freeink::ui::FreeInkApp<32, 2>;
   freeink::ui::GfxRendererTarget target;
   UiApp app;
+  freeink::ui::ListNav listNav;
   ButtonNavigator navigator;
   // Bounded storage lives with this heap-owned screen, not on the render stack.
   freeink::ui::ListItem items[27]{};
   char names[24][32]{};
+  char connectedName[32]{};
   uint8_t found = 0;
   int selected = 0;
-  int top = 0;
-  int rows = 1;
   bool enabled = false;
   uint8_t failureReasons = HalBlePageTurner::None;
   HalBlePageTurner::Status status = HalBlePageTurner::Status::Off;

@@ -16,7 +16,8 @@ preserved `ble-x4-pro-memory-v2-20261018` experimental firmware:
 
 Still unverified: sustained battery usage, repeated connection cycles,
 long-term heap stability, and third-party remote compatibility. The Kobo Remote
-has **not** been tested.
+had **not** been tested at that milestone. Later connection-only testing is
+recorded in [Kobo diagnostics](bluetooth-kobo-diagnostics.md).
 
 ## Windows pairing identity
 
