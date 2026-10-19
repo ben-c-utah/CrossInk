@@ -51,6 +51,7 @@
 
 ### Fixed
 
+- Bluetooth settings use the native on/off switch and show readable, specific failure messages.
 - X4 Pro Bluetooth uses PSRAM for eligible NimBLE host allocations, with a measured S3 startup budget and detailed memory refusal logs.
 - Fix Windows firmware builds failing with conflicting Arduino core compile actions.
 - Keep SdFat dependency patches compatible with Windows Git line-ending settings.

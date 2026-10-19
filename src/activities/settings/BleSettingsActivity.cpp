@@ -28,6 +28,7 @@ void BleSettingsActivity::onEnter() {
 void BleSettingsActivity::snapshot() {
   status = blePageTurner.status();
   enabled = blePageTurner.enabled();
+  failureReasons = blePageTurner.failure();
   passkey = blePageTurner.passkey();
   found = blePageTurner.deviceCount();
   for (uint8_t i = 0; i < found; ++i) std::memcpy(names[i], blePageTurner.device(i).name, sizeof(names[i]));
@@ -62,7 +63,8 @@ void BleSettingsActivity::loop() {
   RenderLock lock(*this, RenderLock::Mode::Try);
   if (!lock.ownsLock()) return;
   if (status != blePageTurner.status() || found != blePageTurner.deviceCount() ||
-      enabled != blePageTurner.enabled() || passkey != blePageTurner.passkey()) {
+      enabled != blePageTurner.enabled() || passkey != blePageTurner.passkey() ||
+      failureReasons != blePageTurner.failure()) {
     snapshot();
     requestUpdate();
   }
@@ -101,18 +103,34 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
       static_cast<int16_t>(metrics.buttonHintsHeight), 0});
   const StrId statusText[] = {StrId::STR_DISABLED, StrId::STR_BLE_READY, StrId::STR_BLE_SCANNING,
                              StrId::STR_CONNECTING, StrId::STR_CONNECTED, StrId::STR_BLE_STOPPING,
-                             StrId::STR_CONNECTION_FAILED, StrId::STR_BLE_LOW_MEMORY};
+                             StrId::STR_BLE_INIT_FAILED, StrId::STR_BLE_LOW_MEMORY};
   char hint[96];
   if (self.passkey) {
     std::snprintf(hint, sizeof(hint), tr(STR_BLE_PASSKEY), static_cast<unsigned long>(self.passkey));
   } else {
     std::snprintf(hint, sizeof(hint), "%s", I18N.get(statusText[static_cast<unsigned>(self.status)]));
   }
-  screen.target().text(screen.takeTop(static_cast<int16_t>(metrics.tabBarHeight)), hint, screen.theme().smallText);
-  screen.target().text(screen.takeTop(static_cast<int16_t>(metrics.tabBarHeight)), tr(STR_BLE_SESSION_HINT),
-                       screen.theme().smallText);
+  // Use the SDK's wrapped text layout and measured height, rather than a
+  // fixed single-line band. Each independent refusal remains readable.
+  const auto message = [&](const char* text) {
+    auto style = screen.theme().smallText;
+    style.maxLines = 8;
+    const auto size = fui::measureWrappedText(screen.target(), text, style, screen.body().width);
+    screen.target().text(screen.takeTop(size.height), text, style);
+  };
+  if (self.failureReasons) {
+    if (self.failureReasons & HalBlePageTurner::Memory) message(tr(STR_BLE_LOW_MEMORY));
+    if (self.failureReasons & HalBlePageTurner::Wifi) message(tr(STR_BLE_WIFI_ACTIVE));
+    if (self.failureReasons & HalBlePageTurner::Initialization) message(tr(STR_BLE_INIT_FAILED));
+    if (self.failureReasons & HalBlePageTurner::Connection) message(tr(STR_BLE_CONNECT_FAILED));
+  } else {
+    message(hint);
+  }
+  message(tr(STR_BLE_SESSION_HINT));
   self.items[0].label = tr(STR_BLE_ENABLE);
-  self.items[0].value = self.enabled ? tr(STR_ENABLED) : tr(STR_DISABLED);
+  self.items[0].toggle = true;
+  self.items[0].toggleChecked = self.enabled;
+  self.items[0].value = nullptr;
   self.items[1].label = tr(STR_BLE_SCAN);
   self.items[2].label = tr(STR_BLE_FORGET);
   for (int i = 0; i < 3 + self.found; ++i) {
@@ -125,6 +143,9 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
   props.selectedIndex = self.selected;
   props.action = 1;
   props.inputMask = fui::InputTouch;
+  props.valueInset = 8;
+  props.labelText = screen.theme().bodyText;
+  props.labelText.maxLines = 2;
   self.rows = configureUiList(props, screen.theme(), screen.body());
   if (self.rows < 1) self.rows = 1;
   if (self.selected < self.top) self.top = self.selected;

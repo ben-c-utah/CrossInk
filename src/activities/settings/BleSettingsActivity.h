@@ -29,6 +29,7 @@ class BleSettingsActivity final : public Activity {
   int top = 0;
   int rows = 1;
   bool enabled = false;
+  uint8_t failureReasons = HalBlePageTurner::None;
   HalBlePageTurner::Status status = HalBlePageTurner::Status::Off;
   uint32_t passkey = 0;
   bool uiReady = false;

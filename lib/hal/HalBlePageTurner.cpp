@@ -27,8 +27,13 @@ BleMemoryPolicy::Snapshot memorySnapshot() {
           heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
           heap_caps_get_free_size(MALLOC_CAP_SPIRAM), static_cast<int>(WiFi.getMode()), psramFound()};
 }
-bool logGuard(const char* stage, const BleMemoryPolicy::Snapshot& heap, const BleMemoryPolicy::Budget& budget) {
+bool logGuard(const char* stage, const BleMemoryPolicy::Snapshot& heap, const BleMemoryPolicy::Budget& budget,
+              uint8_t* reasons = nullptr) {
   const auto fail = BleMemoryPolicy::evaluate(heap, budget);
+  if (reasons) {
+    *reasons = (fail.wifi ? HalBlePageTurner::Wifi : 0) |
+               (fail.freeInternal || fail.largestInternal || fail.psram ? HalBlePageTurner::Memory : 0);
+  }
   LOG_INF("BLE", "%s: wifi_mode=%d wifi_block=%u internal_free=%u largest=%u psram_free=%u psram_ok=%u", stage,
           heap.wifiMode, fail.wifi, heap.freeInternal, heap.largestInternal, heap.freePsram, heap.psramAvailable);
   LOG_INF("BLE", "%s guard: need_free=%u need_largest=%u fail_free=%u fail_largest=%u fail_psram=%u pass=%u", stage,
@@ -38,34 +43,38 @@ bool logGuard(const char* stage, const BleMemoryPolicy::Snapshot& heap, const Bl
 }  // namespace
 
 bool HalBlePageTurner::resident() const { return host().isRunning() || host().isStopping(); }
+bool HalBlePageTurner::enabled() const { return optedIn && host().isRunning(); }
 
 bool HalBlePageTurner::enable() {
   if (resident()) return optedIn;
+  failureReasons = None;
   // BLE needs controller RAM and task stacks even on PSRAM-equipped boards.
-  if (!logGuard("preflight", memorySnapshot(), BleMemoryPolicy::Start)) {
+  if (!logGuard("preflight", memorySnapshot(), BleMemoryPolicy::Start, &failureReasons)) {
     LOG_ERR("BLE", "Start refused; see individual guard failures above");
     state = Status::LowMemory;
     return false;
   }
   HalPowerManager::Lock powerLock;
   LOG_INF("BLE", "NimBLE host allocator=PSRAM; controller and task stacks remain internal");
-  if (!logGuard("before start", memorySnapshot(), BleMemoryPolicy::Start)) {
+  if (!logGuard("before start", memorySnapshot(), BleMemoryPolicy::Start, &failureReasons)) {
     state = Status::LowMemory;
     return false;
   }
   if (!host().begin("CrossInk X4 Pro")) {
     LOG_ERR("BLE", "HID host initialization failed");
-    logGuard("initialization failed", memorySnapshot(), BleMemoryPolicy::PostStart);
+    logGuard("initialization failed", memorySnapshot(), BleMemoryPolicy::PostStart, &failureReasons);
     state = Status::Failed;
+    failureReasons |= Initialization;
     return false;
   }
   // The pinned SDK doesn't check xTaskCreate's result. Refuse connection work
   // unless its verified task exists, so OOM cannot strand a pending connect.
   if (!xTaskGetHandle("ble-conn")) {
     LOG_ERR("BLE", "HID connection task allocation failed");
-    logGuard("task allocation failed", memorySnapshot(), BleMemoryPolicy::PostStart);
+    logGuard("task allocation failed", memorySnapshot(), BleMemoryPolicy::PostStart, &failureReasons);
     stop();
     state = Status::Failed;
+    failureReasons |= Initialization;
     return false;
   }
   // No background reconnect to arbitrary saved bonds. Pairing is explicit.
@@ -74,7 +83,7 @@ bool HalBlePageTurner::enable() {
   state = Status::Ready;
   pairingPasskey = 0;
   filter.reset();
-  if (!logGuard("after start", memorySnapshot(), BleMemoryPolicy::PostStart)) {
+  if (!logGuard("after start", memorySnapshot(), BleMemoryPolicy::PostStart, &failureReasons)) {
     LOG_ERR("BLE", "Rolling back BLE start to preserve reader heap");
     stop();
     state = Status::LowMemory;
@@ -103,6 +112,7 @@ bool HalBlePageTurner::stop(uint32_t timeoutMs) {
 
 bool HalBlePageTurner::scan() {
   if (!optedIn || host().isConnecting() || host().isConnected() || scanPending) return false;
+  failureReasons = None;
   count = 0;
   pairingPasskey = 0;
   host().startScan(5000);
@@ -113,12 +123,14 @@ bool HalBlePageTurner::scan() {
 
 bool HalBlePageTurner::connect(uint8_t index) {
   if (!optedIn || index >= count || host().isConnecting() || host().isConnected()) return false;
+  failureReasons = None;
   std::memcpy(selected, devices[index].address, sizeof(selected));
   pairingPasskey = 0;
   filter.reset();
   if (!host().connect(selected)) {
     LOG_ERR("BLE", "Connect request rejected");
     state = Status::Failed;
+    failureReasons = Connection;
     return false;
   }
   state = Status::Connecting;
@@ -127,6 +139,7 @@ bool HalBlePageTurner::connect(uint8_t index) {
 
 void HalBlePageTurner::forget() {
   if (!optedIn || host().isConnecting()) return;
+  failureReasons = None;
   host().disconnect();
   // This experiment exposes one keyboard; forget all its stored host bonds.
   while (host().pairedCount()) {
@@ -148,7 +161,7 @@ int8_t HalBlePageTurner::poll() {
   const auto runningHeap = memorySnapshot();
   if (BleMemoryPolicy::evaluate(runningHeap, BleMemoryPolicy::Running).any()) {
     LOG_ERR("BLE", "Stopping BLE for Wi-Fi or low reader heap");
-    logGuard("runtime refusal", runningHeap, BleMemoryPolicy::Running);
+    logGuard("runtime refusal", runningHeap, BleMemoryPolicy::Running, &failureReasons);
     stop();
     return 0;
   }
@@ -170,6 +183,7 @@ int8_t HalBlePageTurner::poll() {
   if (host().takeConnectFailure(failure, sizeof(failure))) {
     LOG_ERR("BLE", "Connect failed: %s", failure);
     state = Status::Failed;
+    failureReasons = Connection;
   }
   uint32_t code;
   if (host().takePairingPasskey(code)) {
