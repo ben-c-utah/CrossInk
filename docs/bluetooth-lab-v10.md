@@ -12,7 +12,10 @@ Hardware showed selection without execution. Source confirmed bleLab.tick() was
 inside dispatchButtonShortcut(), but absent after the ordinary main-loop
 activityManager.loop(). A normal tap could queue work without servicing it.
 V10 services that ordinary path too, outside RenderLock, guarded against sleep.
-The shortcut path remains serviced for early-return shortcut dispatches.
+The shortcut path remains serviced for early-return shortcut dispatches. Both
+paths skip exclusive storage/USB mode. Pending initialization or new connection
+work is cancelled if Home is no longer current; existing orderly shutdown still
+progresses. This prevents a queued start racing an activity handoff.
 
 BleLabInput separates focus-only down from tap/Confirm activation; tap wins when
 both are present. A fixed pending UI slot retains activation while rendering owns

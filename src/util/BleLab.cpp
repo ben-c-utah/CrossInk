@@ -134,6 +134,7 @@ void BleLab::tick() {
   switch (phase) {
     case Phase::Idle: return;
     case Phase::Enable: {
+      if (!activityManager.isHomeActivity()) { finish(StrId::STR_BLE_LAB_CANCELLED); return; }
       // Match Settings' memory isolation: never race renderer/cache allocation
       // against the guarded controller initialization. Try-lock, never wait.
       RenderLock lock(RenderLock::Mode::Try);
@@ -150,6 +151,7 @@ void BleLab::tick() {
       if (!blePageTurner.enabled()) { finish(StrId::STR_BLE_LAB_CANCELLED); return; }
       if (blePageTurner.labPeerConnected(selection.peer)) { finish(StrId::STR_BLE_LAB_CONNECTED); return; }
       if (status == HalBlePageTurner::Status::Connected) { finish(StrId::STR_BLE_LAB_OTHER); return; }
+      if (!activityManager.isHomeActivity()) { finish(StrId::STR_BLE_LAB_CANCELLED); return; }
       if (!blePageTurner.labConnectSaved(selection.peer)) { finish(StrId::STR_BLE_LAB_PAIR_AGAIN); return; }
       since = millis(); phase = Phase::AwaitConnection; sample();
       return;

@@ -10,7 +10,7 @@ COMPILER = ROOT / '.pio/native-tools/toolchain-gccmingw32/bin/g++.exe'
 class RuntimeTest(unittest.TestCase):
     def test_normal_loop_services_controller(self):
         text=(ROOT/'src/main.cpp').read_text(encoding='utf-8').split('const unsigned long activityStartTime = millis();',1)[1]
-        self.assertRegex(text,r'activityManager.loop\(\);\s*#if CROSSINK_BLE_LAB\s*if \(!deepSleepInProgress\) bleLab.tick\(\);')
+        self.assertRegex(text,r'activityManager.loop\(\);\s*#if CROSSINK_BLE_LAB\s*if \(!deepSleepInProgress && !activityManager.requiresExclusiveStorageLoop\(\)\) bleLab.tick\(\);')
         home=(ROOT/'src/activities/home/HomeActivity.cpp').read_text(encoding='utf-8')
         self.assertIn('BleLabInput::route(',home)
         self.assertIn('bleLab.request(BleLabInput::command(index))',home)
@@ -61,7 +61,8 @@ struct Disk {
 extern bool lockReady;
 struct RenderLock{enum class Mode{Try};RenderLock(Mode){}bool ownsLock(){return lockReady;}};
 struct Manager{
- int park=0,resume=0,wifi=0,update=0,restart=0,ready=1;
+ int park=0,resume=0,wifi=0,update=0,restart=0,ready=1;bool home=true;
+ bool isHomeActivity(){return home;}
  int prepareBleLabStorage(){++park;return ready;} void finishBleLabStorage(){++resume;}
  bool goToBleLabTransfer(){++wifi;return true;} bool goToBleLabUpdate(){++update;return true;}
  int prepareBleLabRestart(){++restart;return ready;}
@@ -111,6 +112,10 @@ int main(){
  ticks(4);assert(blePageTurner.starts==1);
  auto confirm=BleLabInput::route(-1,-1,true,false,true,1);assert(confirm.action==0);
  assert(bleLab.request(BleLabInput::command(confirm.action)));ticks(4);assert(blePageTurner.stops==1&&!blePageTurner.enabled());
+ reset();assert(bleLab.request(Command::Toggle));ticks(1);activityManager.home=false;ticks(3);
+ assert(blePageTurner.starts==0); // leave Home/USB handoff cannot start radio
+ reset();assert(bleLab.request(Command::Connect));ticks(2);activityManager.home=false;ticks(2);
+ assert(blePageTurner.connects==0); // no new client after leaving Home
  reset();blePageTurner.enableOk=false;assert(bleLab.request(Command::Toggle));ticks(3);
  assert(blePageTurner.starts==1&&!blePageTurner.enabled());assert(bleLab.view().result==StrId::STR_BLE_LOW_MEMORY&&bleLab.view().radio==BleLab::Radio::Error);
  reset();lockReady=false;assert(bleLab.request(Command::Toggle));ticks(3);assert(blePageTurner.starts==0);lockReady=true;ticks(2);assert(blePageTurner.starts==1);
