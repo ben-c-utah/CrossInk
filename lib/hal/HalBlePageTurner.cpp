@@ -265,6 +265,10 @@ bool HalBlePageTurner::connect(uint8_t index) {
 }
 
 void HalBlePageTurner::forget() {
+#if FREEINK_BLE_HID_LIFECYCLE_DEBUG
+  LOG_INF("BLE", "Forget clicked: opted_in=%u connecting=%u connected=%u metadata=%u selected=%s; legacy scope=ALL",
+          optedIn, host().isConnecting(), host().isConnected(), host().pairedCount(), selected);
+#endif
   if (!optedIn || host().isConnecting()) return;
   // Forget retains its existing all-bonds policy. Remove their assignments
   // first; on storage failure keep both bonds and mappings available to retry.
@@ -325,7 +329,7 @@ int8_t HalBlePageTurner::poll() {
   uint32_t code;
   if (host().takePairingPasskey(code)) {
     pairingPasskey = code;
-    LOG_INF("BLE", "Pairing passkey: %06lu", static_cast<unsigned long>(code));
+    LOG_INF("BLE", "Pairing passkey available on screen (value omitted)");
   }
   if (host().isConnected()) {
     pairingPasskey = 0;
