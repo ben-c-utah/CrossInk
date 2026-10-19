@@ -35,6 +35,7 @@ class HalBlePageTurner {
   bool labLoadSelection(BleLabPolicy::Selection& out, bool& present);
   bool labSaveSelection(const BleLabPolicy::Selection& value);
   bool labClearSelection();
+  bool labWifiActive() const;
 #endif
   using SavedDevice = freeink::PairedHidDevice;
   using ForgetResult = freeink::bleforget::Result;

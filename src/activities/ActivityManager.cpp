@@ -44,6 +44,9 @@
 #include "reader/ReaderActivity.h"
 #include "settings/OpdsServerListActivity.h"
 #include "settings/SettingsActivity.h"
+#if CROSSINK_BLE_LAB
+#include "settings/SdFirmwareUpdateActivity.h"
+#endif
 #include "util/FrontlightPanelActivity.h"
 #include "util/FullScreenMessageActivity.h"
 #include "util/SwipeAdjustment.h"
@@ -1431,6 +1434,31 @@ bool ActivityManager::diagnosticCanReclaimFonts() const {
 #endif
 
 #if CROSSINK_BLE_LAB
+int ActivityManager::prepareBleLabStorage() {
+  RenderLock lock(RenderLock::Mode::Try);
+  if (!lock.ownsLock()) return 0;
+  if (!currentActivity || !currentActivity->isHomeActivity() || !diagnosticCanReclaimFonts() || !renderTaskHandle) return -1;
+  if (pendingAction != PendingAction::None) return 0;
+  if (auto* cache = renderer.getFontCacheManager(); cache && cache->isScanning()) return 0;
+  vTaskSuspend(renderTaskHandle);
+  return 1; // caller performs I/O AFTER this lock is released
+}
+void ActivityManager::finishBleLabStorage() {
+  vTaskResume(renderTaskHandle);
+  requestUpdate();
+}
+bool ActivityManager::goToBleLabTransfer() {
+  auto next = makeUniqueNoThrow<CrossPointWebServerActivity>(renderer, mappedInput);
+  if (!next) { LOG_ERR("BLELAB", "Cannot allocate File Transfer activity"); return false; }
+  replaceActivity(std::move(next));
+  return true;
+}
+bool ActivityManager::goToBleLabUpdate() {
+  auto next = makeUniqueNoThrow<SdFirmwareUpdateActivity>(renderer, mappedInput);
+  if (!next) { LOG_ERR("BLELAB", "Cannot allocate SD firmware updater"); return false; }
+  replaceActivity(std::move(next));
+  return true;
+}
 int ActivityManager::prepareBleLabRestart() {
   RenderLock lock(RenderLock::Mode::Try);
   if (!lock.ownsLock()) return 0;

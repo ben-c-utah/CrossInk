@@ -1,3 +1,14 @@
+## [BLE v10-dev] - 2026-10-19
+
+### Added
+
+- Collapsible basic-Lyra Bluetooth Lab with native icon controls for Bluetooth, selected Kobo reconnect, File Transfer, bounded diagnostics export, SD firmware update, and confirmed restart.
+- Windows helper for live serial-log snapshots, saved diagnostic downloads, and firmware upload/read-back verification through existing File Transfer routes.
+
+### Fixed
+
+- Service Home Lab requests in the ordinary main loop; V9/V9a only serviced them on a shortcut dispatch path. Keep activation separate from focus and retain queued actions during repaint contention.
+
 ## [BLE v9a-dev] - 2026-10-19
 
 ### Fixed

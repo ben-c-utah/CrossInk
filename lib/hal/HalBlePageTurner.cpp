@@ -452,6 +452,7 @@ int8_t HalBlePageTurner::poll() {
 }
 
 #if CROSSINK_BLE_LAB
+bool HalBlePageTurner::labWifiActive() const { return WiFi.getMode() != WIFI_MODE_NULL; }
 bool HalBlePageTurner::labConnectedPeer(BleLabPolicy::Selection& out) const {
   if (!enabled() || host().isStopping() || host().isConnecting()) return false;
   const auto peer = pairedPeer();

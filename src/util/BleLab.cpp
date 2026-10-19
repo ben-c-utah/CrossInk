@@ -5,6 +5,8 @@
 #include <HalBlePageTurner.h>
 #include <HeapDiagnostics.h>
 #include <Logging.h>
+#include <HalStorage.h>
+#include <AppVersion.h>
 #include <esp_heap_caps.h>
 #include "activities/Activity.h"
 
@@ -23,16 +25,31 @@ bool BleLab::load() {
 void BleLab::sample() {
   free = heap_caps_get_free_size(HeapDiagnostics::Internal);
   largest = heap_caps_get_largest_free_block(HeapDiagnostics::Internal);
+  events[eventHead] = {millis(), free, largest, uint32_t(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+                       uint8_t(phase), uint8_t(blePageTurner.status())};
+  eventHead = (eventHead + 1) % 8;
+  if (eventCount < 8) ++eventCount;
   ++revision;
 }
-void BleLab::enterHome() { load(); sample(); }
-void BleLab::finish(StrId message) { phase = Phase::Idle; result = message; sample(); }
+void BleLab::enterHome() {
+  load();
+  if (result == StrId::STR_BLE_LAB_WIFI_OPEN) result = StrId::STR_BLE_LAB_WIFI_RETURN;
+  if (result == StrId::STR_BLE_LAB_UPDATE_OPEN) result = StrId::STR_BLE_LAB_UPDATE_RETURN;
+  sample();
+  LOG_INF("BLELAB", "identity=%s", AppVersion::versionLabel());
+}
+void BleLab::finish(StrId message) {
+  LOG_INF("BLELAB", "result=%s radio=%u failure=%u", I18N.get(message), unsigned(blePageTurner.status()), blePageTurner.failure());
+  phase = Phase::Idle; result = message; sample();
+}
 
 bool BleLab::request(Command command) {
-  if (!canRequest(phase, pending, command)) return false;
+  LOG_INF("BLELAB", "requested action=%u phase=%u pending=%u", unsigned(command), unsigned(phase), unsigned(pending));
+  if (!canRequest(phase, pending, command)) { LOG_INF("BLELAB", "refused: action pending/in progress"); return false; }
   const auto status = blePageTurner.status();
   if (command != Command::Restart && (status == HalBlePageTurner::Status::Stopping ||
-      status == HalBlePageTurner::Status::Connecting || status == HalBlePageTurner::Status::Scanning)) return false;
+      status == HalBlePageTurner::Status::Connecting || status == HalBlePageTurner::Status::Scanning)) { LOG_INF("BLELAB", "refused: radio transition/scan active"); return false; }
+  LOG_INF("BLELAB", "accepted action=%u", unsigned(command));
   pending = command;
   ++revision;
   return true;
@@ -62,6 +79,7 @@ bool BleLab::clearSelection(bool all, const char* address, uint8_t type) {
 
 BleLab::View BleLab::view() const {
   View out;
+  out.wifi = blePageTurner.labWifiActive();
   out.free = free; out.largest = largest; out.revision = revision; out.result = result;
   out.busy = pending != Command::None || phase != Phase::Idle ||
              blePageTurner.status() == HalBlePageTurner::Status::Stopping ||
@@ -85,7 +103,14 @@ BleLab::View BleLab::view() const {
 void BleLab::tick() {
   if (pending != Command::None) {
     const auto command = pending; pending = Command::None; since = millis();
-    if (command == Command::Restart) {
+    toolAction = Command::None;
+    if (command == Command::Wifi || command == Command::Logs || command == Command::Update) {
+      if (blePageTurner.labWifiActive()) { finish(StrId::STR_BLE_LAB_CLOSE_WIFI); return; }
+      if (command == Command::Logs && blePageTurner.resident()) { finish(StrId::STR_BLE_LAB_LOGS_OFF); return; }
+      toolAction = command;
+      phase = command == Command::Logs ? Phase::ToolReady : Phase::Stop;
+      result = StrId::STR_BLE_LAB_WORKING;
+    } else if (command == Command::Restart) {
       phase = Phase::RestartStop; result = StrId::STR_BLE_LAB_RESTARTING;
     } else if (command == Command::Toggle) {
       connectAfterEnable = false;
@@ -144,8 +169,32 @@ void BleLab::tick() {
       if (!lock.ownsLock()) return;
       if (blePageTurner.stop(0)) {
         if (phase == Phase::RestartStop) { phase = Phase::RestartReady; sample(); }
+        else if (toolAction != Command::None) { phase = Phase::ToolReady; since = millis(); sample(); }
         else finish(result == StrId::STR_BLE_LAB_TIMEOUT ? result : StrId::STR_BLE_LAB_OFF);
       } else if (expired(millis(), since, StopTimeout)) finish(StrId::STR_BLE_LAB_STOP_FAILED);
+      return;
+    }
+    case Phase::ToolReady: {
+      if (blePageTurner.resident() || blePageTurner.labWifiActive()) { finish(StrId::STR_BLE_LAB_BUSY); return; }
+      const int ready = activityManager.prepareBleLabStorage();
+      if (ready < 0) { finish(StrId::STR_BLE_LAB_TOOL_FAILED); return; }
+      if (!ready) {
+        if (expired(millis(), since, StopTimeout)) finish(StrId::STR_BLE_LAB_TOOL_FAILED);
+        return;
+      }
+      // Renderer parked, lock released. No SD writes in rendering critical sections.
+      HeapDiagnostics::snapshot("Lab tool before");
+      bool ok = true;
+      if (toolAction == Command::Logs) ok = exportDiagnostics();
+      else if (toolAction == Command::Wifi) ok = activityManager.goToBleLabTransfer();
+      else ok = activityManager.goToBleLabUpdate();
+      if (!ok) LOG_ERR("BLELAB", "tool action=%u failed (no success reported)", unsigned(toolAction));
+      const auto completed = toolAction;
+      toolAction = Command::None;
+      HeapDiagnostics::snapshot("Lab tool after");
+      activityManager.finishBleLabStorage();
+      finish(!ok ? StrId::STR_BLE_LAB_TOOL_FAILED : completed == Command::Logs ? StrId::STR_BLE_LAB_LOGS_SAVED :
+             completed == Command::Wifi ? StrId::STR_BLE_LAB_WIFI_OPEN : StrId::STR_BLE_LAB_UPDATE_OPEN);
       return;
     }
     case Phase::RestartReady: {

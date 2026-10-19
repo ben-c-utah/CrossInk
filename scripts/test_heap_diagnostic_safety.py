@@ -13,6 +13,7 @@ DIAGNOSTIC_PATHS = (
     "lib/hal/HalBlePageTurner.cpp",
     "src/activities/settings/BleSettingsActivity.cpp",
     "src/util/BleLab.cpp",
+    "src/util/BleLabExport.cpp",
 )
 
 

@@ -2,8 +2,8 @@
 #include "BleButtonBindings.h"
 
 namespace BleLabPolicy {
-enum class Command : uint8_t { None, Toggle, Connect, Restart };
-enum class Phase : uint8_t { Idle, Enable, Connect, AwaitConnection, Stop, RestartStop, RestartReady };
+enum class Command : uint8_t { None, Toggle, Connect, Restart, Wifi, Logs, Update };
+enum class Phase : uint8_t { Idle, Enable, Connect, AwaitConnection, Stop, RestartStop, RestartReady, ToolReady };
 constexpr uint32_t ConnectionTimeout = 45000;
 constexpr uint32_t StopTimeout = 15000;
 constexpr bool expired(uint32_t now, uint32_t since, uint32_t limit) { return now - since >= limit; }

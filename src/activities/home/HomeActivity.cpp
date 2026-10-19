@@ -5,6 +5,9 @@
 #include <AppVersion.h>
 #include "util/BleLab.h"
 #include "util/BleLabLayout.h"
+#include "util/BleLabInput.h"
+#include "components/icons/listIcons.h"
+#include <FreeInkUIIcon.h>
 #include "components/OptionPopup.h"
 #include "components/TouchRegistry.h"
 #endif
@@ -54,7 +57,7 @@
 namespace {
 #if CROSSINK_BLE_LAB
 // Static, fixed-size UI state avoids a new navigation-time heap allocation.
-struct LabUiState { BleLab::View view; OptionPopup confirmation; uint32_t paintedRevision = 0; } labUi;
+struct LabUiState { BleLab::View view; OptionPopup confirmation; uint32_t paintedRevision = 0; bool expanded = false; uint8_t focus = 0; BleLabInput::Pending pending; } labUi;
 // Called under RenderLock, only after a dialog callback has returned. Rebuild
 // in place (no heap allocation) so cancelled dialogs retain no string buffers.
 void resetLabConfirmation() {
@@ -505,7 +508,7 @@ int getHomeMenuSelectionOffset(const std::vector<RecentBook>& recentBooks) {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// Static carousel frame cache — survives HomeActivity re-creation so that
+// Static carousel frame cache â€” survives HomeActivity re-creation so that
 // returning to home (e.g. after settings) doesn't re-read covers from SD.
 // Freed explicitly in onSelectBook() before entering the reader.
 // ---------------------------------------------------------------------------
@@ -568,7 +571,7 @@ int HomeActivity::getMenuItemCount() const {
     count++;
   }
 #if CROSSINK_BLE_LAB
-  if (labEnabled()) count += 3;
+  if (labEnabled()) count += 1;
 #endif
   return count;
 }
@@ -1092,6 +1095,7 @@ void HomeActivity::updateHighlightedBookContext(const bool allowChapterTitleRead
 void HomeActivity::onExit() {
 #if CROSSINK_BLE_LAB
   resetLabConfirmation();
+  labUi.expanded = false; labUi.focus = 0; labUi.pending.action = -2;
 #endif
   Activity::onExit();
 
@@ -1163,7 +1167,7 @@ void HomeActivity::invalidatePolarityMismatchedCaches() {
 }
 
 void HomeActivity::freeCarouselFrames() {
-  // Instance pointers are aliases into the static cache — do not free here.
+  // Instance pointers are aliases into the static cache â€” do not free here.
   for (int i = 0; i < kCarouselFrameCount; ++i) carouselFrames[i] = nullptr;
   carouselFramesReady = false;
 }
@@ -1369,7 +1373,7 @@ void HomeActivity::preRenderCarouselFrames() {
   uint64_t newKeyHash = 0;
   buildCarouselCacheKey(recentBooks, newKey, newKeyHash);
 
-  // Cache hit: same books in same order — reuse without any SD reads
+  // Cache hit: same books in same order â€” reuse without any SD reads
   if (newKey == gCarouselCache.key && gCarouselCache.frameCount > 0) {
     for (int i = 0; i < gCarouselCache.frameCount; ++i) carouselFrames[i] = gCarouselCache.frames[i];
     carouselFramesReady = true;
@@ -1765,8 +1769,8 @@ void HomeActivity::loop() {
 
   auto activateSelectedHomeItem = [this, visibleBookCount, &activateHomeMenuAction]() {
 #if CROSSINK_BLE_LAB
-    if (labEnabled() && selectorIndex >= getMenuItemCount() - 3) {
-      labActivate(selectorIndex - (getMenuItemCount() - 3));
+    if (labEnabled() && selectorIndex >= getMenuItemCount() - 1) {
+      labActivate(-1);
       return;
     }
 #endif
@@ -1795,7 +1799,7 @@ void HomeActivity::loop() {
 
   if (!isCarousel && canSwapHomeBook() &&
 #if CROSSINK_BLE_LAB
-      !(labEnabled() && selectorIndex >= getMenuItemCount() - 3) &&
+      !(labEnabled() && selectorIndex >= getMenuItemCount() - 1) &&
 #endif
       mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
       mappedInput.getHeldTime() >= HOME_BOOK_SWAP_LONG_PRESS_MS) {
@@ -2304,7 +2308,7 @@ void HomeActivity::render(RenderLock&&) {
       static_cast<CrossPointSettings::UI_THEME>(SETTINGS.uiTheme) == CrossPointSettings::UI_THEME::LYRA_CAROUSEL;
   const int menuSelectedIndex =
 #if CROSSINK_BLE_LAB
-      labEnabled() && selectorIndex >= getMenuItemCount() - 3 ? -1 :
+      labEnabled() && selectorIndex >= getMenuItemCount() - 1 ? -1 :
 #endif
       isCarouselTheme && mappedInput.hasTouchHardware()
                                     ? carouselMenuTouchDownIndex
@@ -2317,7 +2321,7 @@ void HomeActivity::render(RenderLock&&) {
   if (labEnabled()) {
     int top, right, bottom, left;
     renderer.getOrientedViewableTRBL(&top, &right, &bottom, &left);
-    labRender(BleLabLayout::top(pageHeight, bottom, metrics.buttonHintsHeight, renderer.getLineHeight(SMALL_FONT_ID)));
+    labRender(BleLabLayout::top(pageHeight, bottom, metrics.buttonHintsHeight, renderer.getLineHeight(SMALL_FONT_ID), labUi.expanded, menuStartY));
   }
 #endif
 
@@ -2470,12 +2474,23 @@ bool HomeActivity::labEnabled() const { return SETTINGS.uiTheme == CrossPointSet
 bool HomeActivity::labRestarting() const { return labEnabled() && bleLab.restarting(); }
 
 bool HomeActivity::labInput() {
-  int action = -1;
+  // Preserve activation edges even while a repaint owns RenderLock. Only the
+  // main loop writes this fixed pending slot; rendering never reads it.
+  if (!labUi.confirmation.isActive() && !bleLab.restarting()) {
+    int tapped = -1;
+    if (mappedInput.wasItemTapped(tapped)) tapped -= LabTouchFirst; else tapped = -1;
+    const auto edge = BleLabInput::route(tapped, -1,
+        labUi.expanded && mappedInput.wasReleased(MappedInputManager::Button::Confirm),
+        labUi.expanded && mappedInput.wasReleased(MappedInputManager::Button::Back), labUi.expanded, labUi.focus);
+    if (edge.handled && edge.action >= -1) labActivate(edge.action);
+  }
+  int action = -2;
+  bool expanded = false;
   {
     RenderLock lock(*this, RenderLock::Mode::Try);
     if (!lock.ownsLock()) return true;
     const auto next = bleLab.view();
-    if (next.revision != labUi.view.revision || next.radio != labUi.view.radio || next.link != labUi.view.link) {
+    if (next.revision != labUi.view.revision || next.radio != labUi.view.radio || next.link != labUi.view.link || next.wifi != labUi.view.wifi) {
       labUi.view = next;
       requestUpdate();
     }
@@ -2485,32 +2500,51 @@ bool HomeActivity::labInput() {
       return true;
     }
     if (next.restarting) return true;
-    int item = -1;
-    if (mappedInput.wasItemTouchedDown(item) && item >= LabTouchFirst && item < LabTouchFirst + 3) {
-      selectorIndex = getMenuItemCount() - 3 + item - LabTouchFirst;
-      requestUpdate();
+    if (labUi.pending.action != -2) {
+      labActivateLocked(labUi.pending.take());
       return true;
     }
-    if (mappedInput.wasItemTapped(item) && item >= LabTouchFirst && item < LabTouchFirst + 3) {
-      selectorIndex = getMenuItemCount() - 3 + item - LabTouchFirst;
-      action = item - LabTouchFirst;
+    expanded = labUi.expanded;
+    int down = -1;
+    if (mappedInput.wasItemTouchedDown(down)) down -= LabTouchFirst; else down = -1;
+    const auto input = BleLabInput::route(-1, down, false, false, expanded, labUi.focus);
+    if (input.handled) {
+      selectorIndex = getMenuItemCount() - 1;
+      labUi.focus = input.focus;
+      action = input.action;
+      LOG_INF("BLELAB", "input focus=%u activation=%d", labUi.focus, action);
+      requestUpdate();
+      if (action == -2) return true;
+    }
+    if (expanded && !input.handled) {
+      buttonNavigator.onNext([this] { labUi.focus = (labUi.focus + 1) % 7; requestUpdate(); });
+      buttonNavigator.onPrevious([this] { labUi.focus = (labUi.focus + 6) % 7; requestUpdate(); });
     }
   }
-  if (action >= 0) { labActivate(action); return true; }
-  return false;
+  if (action >= -1) { labActivate(action); return true; }
+  return expanded; // no new swipe binding; global gestures retain their routing
 }
 
 void HomeActivity::labActivate(int index) {
-  RenderLock lock(*this, RenderLock::Mode::Try);
-  if (!lock.ownsLock()) return;
-  if (index == 2) {
+  LOG_INF("BLELAB", "UI action=%d %s", index, labUi.pending.offer(index) ? "queued" : "refused (pending/invalid)");
+}
+void HomeActivity::labActivateLocked(int index) {
+  selectorIndex = getMenuItemCount() - 1;
+  labUi.focus = index + 1;
+  LOG_INF("BLELAB", "activate control=%d", index);
+  if (index == -1) {
+    labUi.expanded = !labUi.expanded;
+    labUi.focus = 0;
+    selectorIndex = getMenuItemCount() - 1;
+  } else if (index == 5) {
     const StrId options[] = {StrId::STR_CANCEL, StrId::STR_BLE_LAB_RESTART};
     labUi.confirmation.show(StrId::STR_BLE_LAB_RESTART_PROMPT, options, 2, 0, [](int selected) {
       if (selected == 1) bleLab.request(BleLabPolicy::Command::Restart);
+      else LOG_INF("BLELAB", "restart cancelled; no action queued");
     });
-  } else if (!labUi.view.busy) {
-    bleLab.request(index == 0 ? BleLabPolicy::Command::Toggle : BleLabPolicy::Command::Connect);
-  }
+  } else if (!labUi.view.busy && index >= 0 && index < 5) {
+    bleLab.request(BleLabInput::command(index));
+  } else LOG_INF("BLELAB", "activation refused: UI busy or invalid control");
   labUi.view = bleLab.view();
   requestUpdate();
 }
@@ -2540,32 +2574,49 @@ void HomeActivity::labRender(int top) {
   }
   props.styles.focused = props.styles.selected;
   const int lineBand = BleLabLayout::band(renderer.getLineHeight(SMALL_FONT_ID));
-  auto style = props.text;
-  style.align = fui::TextAlign::Left;
-  style.bold = true;
-  native.target.text(fui::Rect{int16_t(side), int16_t(top), int16_t(width), int16_t(lineBand)}, tr(STR_BLE_LAB_TITLE), style);
-  const int buttonTop = top + lineBand + BleLabLayout::Gap;
-  const StrId labels[] = {StrId::STR_BLE_LAB_TOGGLE, StrId::STR_BLE_LAB_CONNECT, StrId::STR_BLE_LAB_RESTART};
-  const int buttonWidth = (width - 2 * BleLabLayout::ButtonGap) / 3;
-  for (int i = 0; i < 3; ++i) {
-    const Rect rect{side + i * (buttonWidth + BleLabLayout::ButtonGap), buttonTop, buttonWidth, BleLabLayout::ButtonHeight};
-    props.label = I18N.get(labels[i]);
-    props.state = selectorIndex == getMenuItemCount() - 3 + i ? fui::StateSelected : fui::StateNormal;
-    props.enabled = i == 2 ? !labUi.view.restarting : !labUi.view.busy;
-    fui::button(native.frame, fui::Rect{int16_t(rect.x), int16_t(rect.y), int16_t(rect.width), int16_t(rect.height)}, props);
-    if (props.enabled) TouchRegistry::getInstance().add(rect, LabTouchFirst + i, TouchRegistry::Item);
-  }
+  const int panelHeight = BleLabLayout::height(renderer.getLineHeight(SMALL_FONT_ID), labUi.expanded);
+  if (labUi.expanded) TouchRegistry::getInstance().beginFrame(); // replace back-buffer Home targets; keep live map stable until publish
+  native.target.fill(fui::Rect{int16_t(side), int16_t(top), int16_t(width), int16_t(panelHeight)}, fui::Paint::solid(fui::Color::White));
   static const StrId radios[] = {StrId::STR_BLE_LAB_OFF_STATE, StrId::STR_BLE_LAB_STARTING_STATE,
       StrId::STR_BLE_LAB_ON_STATE, StrId::STR_BLE_STOPPING, StrId::STR_BLE_LAB_ERROR_STATE};
   static const StrId links[] = {StrId::STR_NOT_SET, StrId::STR_BLE_LAB_DISCONNECTED, StrId::STR_CONNECTING,
       StrId::STR_CONNECTED, StrId::STR_BLE_LAB_OTHER_STATE};
   char text[160];
-  style.bold = false;
-  const int infoTop = buttonTop + BleLabLayout::ButtonHeight + BleLabLayout::Gap;
-  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_STATE), I18N.get(radios[unsigned(labUi.view.radio)]),
+  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_HEADER), tr(STR_BLE_LAB_TITLE),
+                I18N.get(radios[unsigned(labUi.view.radio)]),
+                I18N.get(labUi.view.wifi ? StrId::STR_BLE_LAB_ON_STATE : StrId::STR_BLE_LAB_OFF_STATE));
+  props.label = text;
+  props.icon = fui::bitmapFromIcon(labUi.expanded ? icon_chevron_up_24 : icon_chevron_down_24);
+  props.iconOnRight = true;
+  props.state = (labUi.expanded ? labUi.focus == 0 : selectorIndex == getMenuItemCount() - 1) ? fui::StateSelected : fui::StateNormal;
+  props.padding = fui::Insets{4, 6, 4, 6};
+  fui::button(native.frame, fui::Rect{int16_t(side), int16_t(top), int16_t(width), BleLabLayout::HeaderHeight}, props);
+  TouchRegistry::getInstance().add(Rect{side, top, width, BleLabLayout::HeaderHeight}, LabTouchFirst, TouchRegistry::Item);
+  int infoTop = top + BleLabLayout::HeaderHeight;
+  if (labUi.expanded) {
+    static const StrId labels[] = {StrId::STR_BLE_LAB_BLUETOOTH, StrId::STR_BLE_LAB_KOBO, StrId::STR_BLE_LAB_WIFI,
+                                  StrId::STR_BLE_LAB_LOGS, StrId::STR_BLE_LAB_UPDATE, StrId::STR_BLE_LAB_RESTART};
+    static const freeink::Icon* const icons[] = {&icon_radio_tower_24, &icon_book_24, &icon_wifi_24,
+                                                &icon_file_text_24, &icon_arrow_up_24, &icon_history_24};
+    const int buttonWidth = (width - 2 * BleLabLayout::ButtonGap) / 3;
+    infoTop += BleLabLayout::Gap;
+    props.iconOnRight = false;
+    for (int i = 0; i < BleLabLayout::Controls; ++i) {
+      const Rect rect{side + (i % 3) * (buttonWidth + BleLabLayout::ButtonGap),
+          infoTop + (i / 3) * (BleLabLayout::ButtonHeight + BleLabLayout::ButtonGap), buttonWidth, BleLabLayout::ButtonHeight};
+      props.label = I18N.get(labels[i]);
+      props.icon = fui::bitmapFromIcon(*icons[i]);
+      props.state = labUi.focus == i + 1 ? fui::StateSelected : fui::StateNormal;
+      props.enabled = i == 5 ? !labUi.view.restarting : !labUi.view.busy;
+      fui::button(native.frame, fui::Rect{int16_t(rect.x), int16_t(rect.y), int16_t(rect.width), int16_t(rect.height)}, props);
+      if (props.enabled) TouchRegistry::getInstance().add(rect, LabTouchFirst + i + 1, TouchRegistry::Item);
+    }
+    infoTop += 2 * BleLabLayout::ButtonHeight + BleLabLayout::ButtonGap + BleLabLayout::Gap;
+  }
+  auto style = props.text; style.align = fui::TextAlign::Left;
+  native.target.text(fui::Rect{int16_t(side), int16_t(infoTop), int16_t(width), int16_t(lineBand)}, AppVersion::versionLabel(), style);
+  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_V10_MEMORY), unsigned(labUi.view.largest), unsigned(labUi.view.free),
                 I18N.get(links[unsigned(labUi.view.link)]));
-  native.target.text(fui::Rect{int16_t(side), int16_t(infoTop), int16_t(width), int16_t(lineBand)}, text, style);
-  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_MEMORY), unsigned(labUi.view.free), unsigned(labUi.view.largest));
   native.target.text(fui::Rect{int16_t(side), int16_t(infoTop + lineBand), int16_t(width), int16_t(lineBand)}, text, style);
   // Keep full controller results intact for Settings/diagnostics; Home has one
   // bounded line. Never feed verbose setup/recovery instructions to this band.
@@ -2581,7 +2632,10 @@ void HomeActivity::labRender(int top) {
     case StrId::STR_BLE_LAB_RESTARTING: message = StrId::STR_BLE_LAB_BRIEF_RESTARTING; break;
     case StrId::STR_BLE_LAB_RESTART_FAILED: message = StrId::STR_BLE_LAB_BRIEF_RESTART; break;
     case StrId::STR_BLE_LAB_ON: case StrId::STR_BLE_LAB_OFF: case StrId::STR_BLE_LAB_CONNECTED:
-    case StrId::STR_BLE_LAB_WORKING: case StrId::STR_BLE_LAB_BUSY: case StrId::STR_BLE_LAB_TIMEOUT: break;
+    case StrId::STR_BLE_LAB_WORKING: case StrId::STR_BLE_LAB_BUSY: case StrId::STR_BLE_LAB_TIMEOUT:
+    case StrId::STR_BLE_LAB_CLOSE_WIFI: case StrId::STR_BLE_LAB_LOGS_OFF: case StrId::STR_BLE_LAB_TOOL_FAILED:
+    case StrId::STR_BLE_LAB_LOGS_SAVED: case StrId::STR_BLE_LAB_WIFI_OPEN: case StrId::STR_BLE_LAB_UPDATE_OPEN:
+    case StrId::STR_BLE_LAB_WIFI_RETURN: case StrId::STR_BLE_LAB_UPDATE_RETURN: break;
     default: message = StrId::STR_BLE_LAB_BRIEF_SETTINGS; break;
   }
   style.bold = true;

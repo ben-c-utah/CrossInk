@@ -13,7 +13,7 @@ class BleLab {
     Link link = Link::NotSelected;
     StrId result = StrId::STR_NONE_OPT;
     uint32_t free = 0, largest = 0, revision = 0;
-    bool busy = false, restarting = false;
+    bool busy = false, restarting = false, wifi = false;
   };
   void enterHome();
   bool request(BleLabPolicy::Command command);
@@ -31,6 +31,11 @@ class BleLab {
   uint32_t since = 0, free = 0, largest = 0, revision = 0;
   bool connectAfterEnable = false;
   int previousStatus = -1;
+  BleLabPolicy::Command toolAction = BleLabPolicy::Command::None;
+  struct Event { uint32_t at, free, largest, psram; uint8_t phase, status; };
+  Event events[8]{}; // 160 bytes, fixed; no allocation/logging hook or background writer
+  uint8_t eventHead = 0, eventCount = 0;
+  bool exportDiagnostics();
   bool load();
   void sample();
   void finish(StrId message);

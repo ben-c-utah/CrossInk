@@ -138,6 +138,10 @@ class ActivityManager {
   void begin(uint32_t renderTaskStackBytes = 16384);
   void loop();
 #if CROSSINK_BLE_LAB
+  int prepareBleLabStorage();
+  void finishBleLabStorage();
+  bool goToBleLabUpdate();
+  bool goToBleLabTransfer();
   int prepareBleLabRestart(); // 0: wait; -1: refused/save failure; 1: renderer parked
 #endif
 #if CROSSINK_HEAP_DIAGNOSTICS

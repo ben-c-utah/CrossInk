@@ -39,6 +39,7 @@ class HomeActivity final : public Activity {
   bool labRestarting() const;
   bool labInput();
   void labActivate(int index);
+  void labActivateLocked(int index);
   void labRender(int top);
 #endif
   int lastCarouselBookIndex = 0;  // remembered position when leaving carousel row

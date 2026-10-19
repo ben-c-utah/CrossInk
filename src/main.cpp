@@ -1896,6 +1896,9 @@ void loop() {
 
   const unsigned long activityStartTime = millis();
   activityManager.loop();
+#if CROSSINK_BLE_LAB
+  if (!deepSleepInProgress) bleLab.tick(); // service normal touch/Confirm requests, not only shortcut dispatch
+#endif
 #if CROSSINK_APP_CAP_TOUCH
   // A delayed Home event is valid for this activity dispatch only. If an
   // unrelated gesture took priority, do not carry it into the next activity.
