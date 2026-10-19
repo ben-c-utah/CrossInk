@@ -31,10 +31,9 @@ inline void allocation(const char* owner, const void* ptr, size_t capacity) {
           static_cast<unsigned>(capacity), static_cast<unsigned>(heap_caps_get_allocated_size(const_cast<void*>(ptr))),
           esp_ptr_external_ram(ptr));
 }
-inline void blocks(const char* stage) {
-  LOG_INF("HDBG", "BEGIN internal block dump %s (addresses/sizes only; no contents)", stage);
-  heap_caps_dump(Internal);
-  LOG_INF("HDBG", "END internal block dump %s", stage);
-}
+// Never print from a heap walker/dump callback: the allocator holds a
+// portMUX critical section while visiting blocks, starving interrupt service.
+// heap_caps_print_heap_info copies each region's statistics under its lock and
+// releases that lock before serial output. Keep diagnostics summary-only.
 }  // namespace HeapDiagnostics
 #endif

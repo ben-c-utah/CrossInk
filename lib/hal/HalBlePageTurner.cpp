@@ -177,7 +177,6 @@ bool HalBlePageTurner::enable() {
 #endif
 #if CROSSINK_HEAP_DIAGNOSTICS
   HeapDiagnostics::snapshot("BLE before preflight", "", true);
-  HeapDiagnostics::blocks("before BLE preflight");
 #endif
   // BLE needs controller RAM and task stacks even on PSRAM-equipped boards.
   if (!logGuard("preflight", memorySnapshot(), BleMemoryPolicy::Start, &failureReasons)) {
@@ -248,7 +247,6 @@ bool HalBlePageTurner::stop(uint32_t timeoutMs) {
 #if CROSSINK_HEAP_DIAGNOSTICS
   if (wasResident) {
     HeapDiagnostics::snapshot("BLE teardown complete", "running=0 stopping=0", true);
-    HeapDiagnostics::blocks("BLE teardown complete");
   }
 #endif
   state = Status::Off;

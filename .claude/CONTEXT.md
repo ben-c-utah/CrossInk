@@ -44,3 +44,5 @@ Refer to https://freeink.org/llms.txt for guidance.
 
 - POSIX TZ signs are inverted from ISO 8601 in `TimeStore::applyTimezone()`: `"UTC-1"` means UTC+1.
 - `LyraTheme::drawHeader()` does not call `BaseTheme::drawHeader()`, so header changes in the base theme must be duplicated in Lyra if needed.
+
+- ESP32 runtime diagnostics must not print inside `heap_caps_dump`/heap-walker callbacks: heap spinlocks mask interrupts, and long ROM serial output caused an X4 Pro CPU1 interrupt watchdog reset. Use statistics copied before printing; yielding around the dump cannot fix its critical section.

@@ -56,6 +56,8 @@
 
 ### Fixed
 
+- Prevent an interrupt-watchdog reset in X4 Pro heap-diagnostic firmware by removing full heap-block serial dumps from Bluetooth startup, shutdown and cache reclamation.
+
 - Bluetooth settings group discovered devices separately from commands and use device terminology.
 - Bluetooth settings use the native on/off switch and show readable, specific failure messages.
 - X4 Pro Bluetooth uses PSRAM for eligible NimBLE host allocations, with a measured S3 startup budget and detailed memory refusal logs.

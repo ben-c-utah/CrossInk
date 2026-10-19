@@ -98,13 +98,11 @@ void BleSettingsActivity::reclaimDiagnosticCaches() {
   HeapDiagnostics::snapshot("reclaim before", "", true);
   renderer.logHeapAllocations();
   cache->logAllocations();
-  HeapDiagnostics::blocks("reclaim before");
   if (auto* decompressor = cache->getDecompressor()) decompressor->clearCache();
   HeapDiagnostics::snapshot("reclaim after built-in fonts");
   cache->releaseSdFontCaches();
   HeapDiagnostics::snapshot("reclaim after all fonts BEFORE repaint", "", true);
   cache->logAllocations();
-  HeapDiagnostics::blocks("reclaim after all fonts BEFORE repaint");
   diagnosticRepaint = true;
   // No radio start, settings writes, font unload or framebuffer changes here.
 }

@@ -1,4 +1,8 @@
-# X4 Pro Bluetooth restart heap experiment (V8)
+# X4 Pro Bluetooth restart heap experiment (V8a)
+
+V8 (`45b464b7`) is superseded: its full heap dump caused a CPU1 interrupt
+watchdog reset before BLE startup. V8a removes every full-block dump; complete
+the [watchdog smoke test](bluetooth-heap-watchdog.md) before this experiment.
 
 Baseline: CrossInk `4c85de55`, FreeInk SDK `9f66002`. This experiment changes
 neither allocation policy nor Bluetooth memory thresholds. It is not a permanent
@@ -77,19 +81,19 @@ boundaries. Font logs name exact owned allocation addresses, capacities and actu
 allocated sizes; capacity zero means unavailable, not an empty allocation.
 `external=1` means PSRAM. Renderer logs also identify retained BW storage.
 
-Region summaries and full INTERNAL|8BIT heap dumps occur only at BLE preflight,
-completed teardown and the manually requested reclamation experiment. Dumps
-contain addresses/sizes/free-state, never memory contents or keys. These use
-the installed IDF heap API and its ROM console; capture COM3/115200. No heap
-tracing build option is enabled against the prebuilt Arduino core.
+Lightweight region summaries occur at BLE preflight, completed teardown and the
+manually requested reclamation experiment. The helper collects statistics before
+serial output. No block dumps or heap-walker callbacks remain in these paths.
+Capture COM3/115200. No heap tracing build option is enabled against the prebuilt
+Arduino core. Named cache and theme allocation addresses remain available.
 
 Instrumentation allocates no new diagnostic heap buffers or global trace arrays.
 It adds a first-render flag per activity and one native diagnostic list row/flag
 to the Bluetooth activity. Serial output changes timing and those small object
 size changes can affect layout (Bluetooth activity payload: 4,984 bytes versus
 V7 4,924, a 60-byte increase): compare within this build, not absolute addresses
-across firmware versions. Underlying allocator dumps are not a whole-system
-atomic snapshot; unrelated RTOS allocations can change between measurements.
+across firmware versions. Statistics are not a whole-system atomic snapshot;
+unrelated RTOS allocations can change between measurements.
 
 ## Controlled hardware procedure (supervised installation separately)
 
@@ -98,18 +102,18 @@ atomic snapshot; unrelated RTOS allocations can change between measurements.
    those choices. Do not Forget devices or change assignments during the test.
 2. **Control run, fresh boot:** enable BLE, connect Kobo, do not open EPUB.
    Return to Bluetooth and disable once. Wait for `BLE teardown complete` and
-   its END dump marker. Wait 30 seconds, then enable once. Save the whole log.
+   the normal status returning to Off. Wait 30 seconds, then enable once. Save the whole log.
 3. **Reading run, fresh boot:** enable/connect Kobo, open the usual EPUB, turn
    several pages (including the previously tested image chapter), return Home,
    then Settings → System → Bluetooth. Disable once; await completed teardown.
-   Wait 30 seconds, attempt enable once. Preserve the refusal and preflight dump.
+   Wait 30 seconds, attempt enable once. Preserve the refusal and preflight measurements.
 4. While Bluetooth is fully Off, select **Reclaim Font Caches (Diagnostic)**.
    It is unavailable while BLE is resident or a reader remains on the activity
    stack. The action holds the existing RenderLock and refuses active font scans.
    It first clears built-in font caches, then the existing SD-font release API.
    It never unloads font faces, changes settings/progress, or starts Bluetooth.
 5. Preserve `reclaim before`, `reclaim after built-in fonts`, `reclaim after all
-   fonts BEFORE repaint`, both block dumps, and `reclaim after normal repaint`.
+   fonts BEFORE repaint`, and `reclaim after normal repaint`.
    The panel content remains until the ordinary redraw; glyph pointers are not
    retained across that locked, completed draw. After repaint, manually enable
    once. The existing 131,072/79,872 startup checks still decide whether it starts.
@@ -121,17 +125,15 @@ atomic snapshot; unrelated RTOS allocations can change between measurements.
 
 - Recovery after the built-in-only step identifies the decompressor cache group;
   recovery only after the SD-font step identifies optional SD-font caches.
-  Match allocation addresses to the intervening used blocks in the dump.
-  The IDF dump prints block-header addresses; user pointers are offset by the
-  allocator/debug header, so do not require literal address equality.
+  Compare the named allocation addresses/sizes before and after each step.
 - Recovery before repaint followed by loss after repaint identifies reconstruction
   as a contributor. A future locked, just-in-time cache release before BLE start
   is only a candidate: first validate post-start/render headroom and redraw cost.
-- No recovery: compare used-block addresses/sizes in control teardown versus
-  fragmented teardown and before/after reclamation. Cross-reference named font,
-  renderer, theme and activity allocations; investigate the remaining pinning owner.
-  Dumps do not supply allocation call sites. Add tracking only at the newly
-  identified owner's allocation boundary if required, not speculative heap hooks.
+- No recovery: compare the named font, renderer, theme and activity allocations
+  and region statistics between control and reading runs. These summaries cannot
+  locate an unnamed intervening block. Any future block-level capture needs a
+  separately reviewed bounded copy-only mechanism, with output after heap locks
+  are released. Do not reintroduce runtime full dumps or print in heap walkers.
 - Stable residual allocation across cycles suggests retention/layout; growing
   allocated bytes/block counts at the same settled checkpoint suggest a leak.
   Neither total free memory nor one successful restart proves long-term safety.
@@ -144,7 +146,7 @@ Only after hardware evidence, correct the specific cache lifetime or consider
 explicit PSRAM placement for a suitable identified buffer. Keep the current BLE
 guards and all pairing/forgetting/mapping behavior unchanged.
 
-## Build verification
+## Original V8 build verification (superseded)
 
 `pio run -e x4-pro` succeeded (one full build, one incremental build to include
 explicit theme-address logging). Final image: **5,843,728 bytes**, leaving
