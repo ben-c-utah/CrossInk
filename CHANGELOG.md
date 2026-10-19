@@ -1,3 +1,9 @@
+## [BLE v9a-dev] - 2026-10-19
+
+### Fixed
+
+- Keep the diagnostic basic-Lyra Bluetooth Lab inside the screen with outlined focusable buttons, compact feedback, and reserved bottom spacing; retain the full book card and readable title/progress content.
+
 ## [BLE v9-dev] - 2026-10-19
 
 ### Added

@@ -83,3 +83,57 @@ Preserve logs and screen outcomes. No cache reset or bond deletion is required
 for A/B. Do not infer a permanent correction until the pointer/capacity evidence
 identifies the retained allocation. Binary size, RAM, partition headroom, SHA-256,
 ELF and build log are recorded in the separate immutable test artifact archive.
+
+## V9a presentation correction
+
+BLE orchestration, identity storage, guards and diagnostic measurements are
+unchanged. Only diagnostic basic Lyra uses compact 42-pixel menu rows with
+4-pixel gaps; other themes and production Lyra retain their existing metrics.
+Native FreeInkUI buttons now explicitly set borders in all states, black/white
+selected focus, six-pixel padding and one-line short labels. The main-loop
+selection/activation and touch routing are unchanged.
+
+For the X4 Pro's 800x480 panel in portrait Home coordinates (480x800):
+
+| Region | Vertical bounds (exclusive bottom) |
+| --- | --- |
+| Full book card | 24?266 (image top 32, left 28) |
+| Seven menu rows, including Settings | 270?588 |
+| Bluetooth Lab heading | 600?624 |
+| Three 142x44 buttons with 6-pixel gaps | 628?672 |
+| Bluetooth/Kobo state | 676?700 |
+| Internal RAM / largest block | 700?724 |
+| One-line result, including low memory | 724?748 |
+| Reserved gap | 748?760 |
+| Existing button hints | 760?800 |
+
+All Lab bands use the renderer's actual small-font line advance plus four
+pixels for ink/descender safety. Horizontal content spans x=20..460. Compact
+English feedback and labels are measured against firmware glyph advances in
+`scripts/test_ble_lab_layout.py`; future longer translations still use native
+single-line ellipsis rather than overflowing. Full original messages remain
+in source/Settings and existing BLE failure logs. The displayed build remains
+`v9-dev <new Git SHA>`; V9a is identified by that exact source SHA and its archive,
+without changing update metadata or BLE build flags.
+
+The full 242-pixel card is deliberately retained: Lyra's 226-pixel cover image,
+up-to-three-line title, author, statistics and progress do not honor shrinking
+just the nominal card height. No allocation API or new heap owner was added.
+The existing optional cover cache now follows the full card region: 14520 bytes
+in portrait, rather than V9's incorrectly shortened region (6840?14520 depending
+on optional rows). This geometry can affect allocation history; use the SAME
+V9a binary for the memory investigation and do not compare it as a heap fix.
+
+The dependency-free local PNG preview uses firmware bitmap glyphs and the same
+portrait geometry, with seven rows, a long title, statistics, 100% progress,
+selected/unselected buttons and a low-memory error. It is a layout approximation,
+not an app simulator: icons, kerning, real covers and interaction are not modeled.
+No physical visual verification is claimed. Both changed source units compile;
+constexpr geometry checks cover menu separation and larger bottom insets.
+
+After supervised installation: verify the on-screen Git ID, then use physical
+Up/Down/Confirm through the ordinary items and all three Lab buttons. Check visible
+focus/borders and Restart Cancel, long titles and progress/statistics variants,
+then BT enable/Connect Kobo/Off and any guarded low-memory refusal. Nothing may
+encroach on the hint strip. Check touch separately if used. Continue the existing
+A/B fragmentation protocol only once layout is accepted. Do not flash automatically.

@@ -4,6 +4,7 @@
 #include <components/controls/button.h>
 #include <AppVersion.h>
 #include "util/BleLab.h"
+#include "util/BleLabLayout.h"
 #include "components/OptionPopup.h"
 #include "components/TouchRegistry.h"
 #endif
@@ -60,7 +61,6 @@ void resetLabConfirmation() {
   std::destroy_at(&labUi.confirmation);
   std::construct_at(&labUi.confirmation);
 }
-constexpr int LabHeight = 146;
 constexpr int LabTouchFirst = 100;
 #endif
 constexpr uint32_t CAROUSEL_CACHE_MAGIC = 0x43434152;  // "CCAR"
@@ -2254,14 +2254,19 @@ void HomeActivity::render(RenderLock&&) {
   auto menuItems = buildSelectableHomeMenuItems(hasOpdsServers, hasReadingStats, hasBookmarks, hasClippings,
                                                 metrics.homeContinueReadingInMenu && !recentBooks.empty());
   int homeCoverTileHeight = metrics.homeCoverTileHeight;
+  int homeCoverTop = metrics.homeTopPadding;
+  int homeMenuGap = metrics.homeMenuTopOffset;
+  int homeMenuEnd = pageHeight - metrics.buttonHintsHeight;
 #if CROSSINK_BLE_LAB
   if (labEnabled()) {
-    // Use unused space first; only shorten the artwork if optional menu rows
-    // otherwise leave insufficient room. Normal Home commands keep their style.
-    const int menuRows = std::min(7, menuItems.size());
-    const int needed = menuRows * (metrics.menuRowHeight + metrics.menuSpacing) - metrics.menuSpacing;
-    homeCoverTileHeight = std::max(0, std::min(homeCoverTileHeight,
-        pageHeight - metrics.homeTopPadding - metrics.homeMenuTopOffset - metrics.buttonHintsHeight - needed - LabHeight));
+    int top, right, bottom, left;
+    renderer.getOrientedViewableTRBL(&top, &right, &bottom, &left);
+    homeCoverTop = BleLabLayout::coverTop(std::max(metrics.contentSidePadding, left), top);
+    homeMenuGap = BleLabLayout::CoverGap;
+    homeMenuEnd = BleLabLayout::top(pageHeight, bottom, metrics.buttonHintsHeight,
+                                     renderer.getLineHeight(SMALL_FONT_ID)) - BleLabLayout::Gap;
+    // Keep the full-height card: Lyra's cover and three-line title/statistics
+    // rendering use its real thumbnail height, not a shrunken nominal tile.
   }
 #endif
   if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::CLASSIC) {
@@ -2282,17 +2287,17 @@ void HomeActivity::render(RenderLock&&) {
   // which sub-region of the framebuffer to snapshot. ~16 KB in Portrait
   // instead of the 48 KB full framebuffer the previous bind captured.
   coverRectX = 0;
-  coverRectY = metrics.homeTopPadding;
+  coverRectY = homeCoverTop;
   coverRectW = pageWidth;
   coverRectH = homeCoverTileHeight;
 
-  GUI.drawRecentBookCover(renderer, Rect{0, metrics.homeTopPadding, pageWidth, homeCoverTileHeight}, recentBooks,
+  GUI.drawRecentBookCover(renderer, Rect{0, homeCoverTop, pageWidth, homeCoverTileHeight}, recentBooks,
                           selectorIndex, coverRendered, coverBufferStored, bufferRestored,
                           std::bind(&HomeActivity::storeCoverBuffer, this),
                           hasAnyBookStats(currentBookStats) ? &currentBookStats : nullptr, currentBookProgressPercent);
 
-  const int menuStartY = metrics.homeTopPadding + homeCoverTileHeight + metrics.homeMenuTopOffset;
-  const int menuEndY = pageHeight - metrics.buttonHintsHeight;
+  const int menuStartY = homeCoverTop + homeCoverTileHeight + homeMenuGap;
+  const int menuEndY = homeMenuEnd;
   const int menuHeight = std::max(0, menuEndY - menuStartY);
 
   const bool isCarouselTheme =
@@ -2309,7 +2314,11 @@ void HomeActivity::render(RenderLock&&) {
       [&menuItems](int index) { return menuItems[index].label; },
       [&menuItems](int index) { return menuItems[index].icon; });
 #if CROSSINK_BLE_LAB
-  if (labEnabled()) labRender(pageHeight - metrics.buttonHintsHeight - LabHeight);
+  if (labEnabled()) {
+    int top, right, bottom, left;
+    renderer.getOrientedViewableTRBL(&top, &right, &bottom, &left);
+    labRender(BleLabLayout::top(pageHeight, bottom, metrics.buttonHintsHeight, renderer.getLineHeight(SMALL_FONT_ID)));
+  }
 #endif
 
   const char* readLabel = recentBooks.empty() ? "" : tr(STR_READ);
@@ -2515,16 +2524,31 @@ void HomeActivity::labRender(int top) {
   const int width = renderer.getScreenWidth() - side - std::max(metrics.contentSidePadding, bezelRight);
   // Native button/frame objects are bounded render-stack scratch, reused for all
   // three controls. This avoids a retained FreeInkApp or dynamic list allocation.
-  fui::GfxRendererFrame<1> native(renderer, UI_10_FONT_ID, UI_10_FONT_ID, UI_12_FONT_ID);
+  fui::GfxRendererFrame<1> native(renderer, SMALL_FONT_ID, UI_10_FONT_ID, UI_12_FONT_ID);
   fui::ButtonProps props;
   props.text.font = fui::GfxRendererTarget::FONT_SMALL;
-  props.text.maxLines = 2;
+  props.text.maxLines = 1;
   props.text.align = fui::TextAlign::Center;
   props.radius = 6;
+  props.padding = fui::Insets{6, 6, 6, 6};
+  props.styles = fui::defaultButtonStyles();
+  // Native buttons default to borderless white; explicitly outline every state.
+  for (auto* box : {&props.styles.normal, &props.styles.selected, &props.styles.focused,
+                    &props.styles.active, &props.styles.disabled}) {
+    box->border = fui::Paint::solid(fui::Color::Black);
+    box->borderWidth = 1;
+  }
+  props.styles.focused = props.styles.selected;
+  const int lineBand = BleLabLayout::band(renderer.getLineHeight(SMALL_FONT_ID));
+  auto style = props.text;
+  style.align = fui::TextAlign::Left;
+  style.bold = true;
+  native.target.text(fui::Rect{int16_t(side), int16_t(top), int16_t(width), int16_t(lineBand)}, tr(STR_BLE_LAB_TITLE), style);
+  const int buttonTop = top + lineBand + BleLabLayout::Gap;
   const StrId labels[] = {StrId::STR_BLE_LAB_TOGGLE, StrId::STR_BLE_LAB_CONNECT, StrId::STR_BLE_LAB_RESTART};
-  const int buttonWidth = (width - 12) / 3;
+  const int buttonWidth = (width - 2 * BleLabLayout::ButtonGap) / 3;
   for (int i = 0; i < 3; ++i) {
-    const Rect rect{side + i * (buttonWidth + 6), top + 4, buttonWidth, 48};
+    const Rect rect{side + i * (buttonWidth + BleLabLayout::ButtonGap), buttonTop, buttonWidth, BleLabLayout::ButtonHeight};
     props.label = I18N.get(labels[i]);
     props.state = selectorIndex == getMenuItemCount() - 3 + i ? fui::StateSelected : fui::StateNormal;
     props.enabled = i == 2 ? !labUi.view.restarting : !labUi.view.busy;
@@ -2536,16 +2560,33 @@ void HomeActivity::labRender(int top) {
   static const StrId links[] = {StrId::STR_NOT_SET, StrId::STR_BLE_LAB_DISCONNECTED, StrId::STR_CONNECTING,
       StrId::STR_CONNECTED, StrId::STR_BLE_LAB_OTHER_STATE};
   char text[160];
-  auto style = props.text; style.align = fui::TextAlign::Left; style.maxLines = 2;
+  style.bold = false;
+  const int infoTop = buttonTop + BleLabLayout::ButtonHeight + BleLabLayout::Gap;
   std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_STATE), I18N.get(radios[unsigned(labUi.view.radio)]),
                 I18N.get(links[unsigned(labUi.view.link)]));
-  native.target.text(fui::Rect{int16_t(side), int16_t(top + 56), int16_t(width), 22}, text, style);
+  native.target.text(fui::Rect{int16_t(side), int16_t(infoTop), int16_t(width), int16_t(lineBand)}, text, style);
   std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_MEMORY), unsigned(labUi.view.free), unsigned(labUi.view.largest));
-  native.target.text(fui::Rect{int16_t(side), int16_t(top + 78), int16_t(width), 22}, text, style);
-  const auto message = labUi.view.result == StrId::STR_NONE_OPT ? StrId::STR_BLE_LAB_SELECT : labUi.view.result;
+  native.target.text(fui::Rect{int16_t(side), int16_t(infoTop + lineBand), int16_t(width), int16_t(lineBand)}, text, style);
+  // Keep full controller results intact for Settings/diagnostics; Home has one
+  // bounded line. Never feed verbose setup/recovery instructions to this band.
+  StrId message = labUi.view.result;
+  switch (message) {
+    case StrId::STR_NONE_OPT: case StrId::STR_BLE_LAB_SELECT: message = StrId::STR_BLE_LAB_BRIEF_SELECT; break;
+    case StrId::STR_BLE_LOW_MEMORY: message = StrId::STR_BLE_LAB_BRIEF_MEMORY; break;
+    case StrId::STR_BLE_LAB_STORAGE: message = StrId::STR_BLE_LAB_BRIEF_STORAGE; break;
+    case StrId::STR_BLE_LAB_OTHER: message = StrId::STR_BLE_LAB_BRIEF_OTHER; break;
+    case StrId::STR_BLE_LAB_PAIR_AGAIN: message = StrId::STR_BLE_LAB_BRIEF_SELECTION; break;
+    case StrId::STR_BLE_LAB_CANCELLED: message = StrId::STR_BLE_LAB_BRIEF_CANCELLED; break;
+    case StrId::STR_BLE_LAB_STOP_FAILED: message = StrId::STR_BLE_LAB_BRIEF_STOP; break;
+    case StrId::STR_BLE_LAB_RESTARTING: message = StrId::STR_BLE_LAB_BRIEF_RESTARTING; break;
+    case StrId::STR_BLE_LAB_RESTART_FAILED: message = StrId::STR_BLE_LAB_BRIEF_RESTART; break;
+    case StrId::STR_BLE_LAB_ON: case StrId::STR_BLE_LAB_OFF: case StrId::STR_BLE_LAB_CONNECTED:
+    case StrId::STR_BLE_LAB_WORKING: case StrId::STR_BLE_LAB_BUSY: case StrId::STR_BLE_LAB_TIMEOUT: break;
+    default: message = StrId::STR_BLE_LAB_BRIEF_SETTINGS; break;
+  }
   style.bold = true;
   std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_RESULT), I18N.get(message));
-  native.target.text(fui::Rect{int16_t(side), int16_t(top + 100), int16_t(width), 42}, text, style);
+  native.target.text(fui::Rect{int16_t(side), int16_t(infoTop + 2 * lineBand), int16_t(width), int16_t(lineBand)}, text, style);
   if (labUi.paintedRevision != labUi.view.revision) {
     labUi.paintedRevision = labUi.view.revision;
     HeapDiagnostics::snapshot("Home Lab after repaint");

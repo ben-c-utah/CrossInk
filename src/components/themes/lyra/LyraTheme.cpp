@@ -1,4 +1,8 @@
 #include "LyraTheme.h"
+#include <BleLabConfig.h>
+#if CROSSINK_BLE_LAB
+#include "util/BleLabLayout.h"
+#endif
 
 #include <GfxRenderer.h>
 #include <HalGPIO.h>
@@ -626,6 +630,14 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
                                const std::function<const char*(int index)>& buttonLabel,
                                const std::function<UIIcon(int index)>& rowIcon) const {
   const auto& menuMetrics = UITheme::getInstance().getMetrics();
+  int rowHeight = menuMetrics.menuRowHeight;
+  int rowGap = menuMetrics.menuSpacing;
+#if CROSSINK_BLE_LAB
+  if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::LYRA) {
+    rowHeight = BleLabLayout::MenuRow;
+    rowGap = BleLabLayout::MenuGap;
+  }
+#endif
 
   constexpr int maxVisibleItems = 7;
   const int pageItems = maxVisibleItems;
@@ -633,7 +645,7 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
 
   if (totalPages > 1) {
     const int scrollAreaHeight =
-        maxVisibleItems * (menuMetrics.menuRowHeight + menuMetrics.menuSpacing) - menuMetrics.menuSpacing;
+        maxVisibleItems * (rowHeight + rowGap) - rowGap;
     const int scrollBarHeight = (scrollAreaHeight * pageItems) / buttonCount;
     const int currentPage = selectedIndex / pageItems;
     const int scrollBarY = rect.y + ((scrollAreaHeight - scrollBarHeight) * currentPage) / (totalPages - 1);
@@ -652,10 +664,10 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
       tileWidth -= (LyraMetrics::values.scrollBarWidth + LyraMetrics::values.scrollBarRightOffset);
     }
     Rect tileRect = Rect{rect.x + menuMetrics.contentSidePadding,
-                         rect.y + displayIndex * (menuMetrics.menuRowHeight + menuMetrics.menuSpacing), tileWidth,
-                         menuMetrics.menuRowHeight};
+                         rect.y + displayIndex * (rowHeight + rowGap), tileWidth,
+                         rowHeight};
     TouchRegistry::getInstance().add(
-        buttonMenuTouchTarget(tileRect, rect, i == buttonCount - 1, menuMetrics.menuSpacing), i, TouchRegistry::Item);
+        buttonMenuTouchTarget(tileRect, rect, i == buttonCount - 1, rowGap), i, TouchRegistry::Item);
 
     const bool selected = selectedIndex == i;
 
@@ -667,7 +679,7 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
     if (!label) label = "";
     int textX = tileRect.x + 16;
     const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
-    const int textY = tileRect.y + (menuMetrics.menuRowHeight - lineHeight) / 2;
+    const int textY = tileRect.y + (rowHeight - lineHeight) / 2;
 
     if (rowIcon != nullptr) {
       UIIcon icon = rowIcon(i);
