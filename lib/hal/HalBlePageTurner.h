@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "BleArrowFilter.h"
+#include "BleButtonBindings.h"
 
 // Main-loop-only facade. BLE callbacks and bonding remain owned by the SDK.
 class HalBlePageTurner {
@@ -14,7 +15,7 @@ class HalBlePageTurner {
     char name[32]{};
   };
   enum class Status { Off, Ready, Scanning, Connecting, Connected, Stopping, Failed, LowMemory };
-  enum Failure : uint8_t { None = 0, Memory = 1, Wifi = 2, Initialization = 4, Connection = 8 };
+  enum Failure : uint8_t { None = 0, Memory = 1, Wifi = 2, Initialization = 4, Connection = 8, ButtonStorage = 16 };
   bool enable();
   bool stop(uint32_t timeoutMs = 0);
   bool resident() const;
@@ -29,6 +30,12 @@ class HalBlePageTurner {
   const Device& device(uint8_t index) const { return devices[index]; }
   uint32_t passkey() const { return pairingPasskey; }
   const char* connectedName() const;
+  bool beginLearning(BleBindings::Action action);
+  void cancelLearning();
+  BleBindings::Learning learning() const { return learner.state; }
+  BleBindings::Action learningAction() const { return learner.action; }
+  bool hasBinding(BleBindings::Action action) const;
+  bool resetButtons();
 
  private:
   // Fixed scan snapshot: render never reads the SDK's callback-owned scan list.
@@ -41,6 +48,15 @@ class HalBlePageTurner {
   uint32_t pairingPasskey = 0;
   char selected[18]{};
   BleArrowFilter filter;
+  // Four SDK bond slots, two fingerprints each; fixed storage, no per-event allocation.
+  BleBindings::Store bindings;
+  BleBindings::Router bindingRouter;
+  BleBindings::Learner learner;
+  bool bindingsLoaded = false;
+  BleBindings::Peer pairedPeer() const;
+  bool loadBindings();
+  void completeLearning();
+  void discardInput();
 #if CROSSINK_BLE_INPUT_DIAGNOSTICS
   uint16_t diagnosticEdges = 0;
 #endif

@@ -8,6 +8,7 @@
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <nvs.h>
 
 #include <cstring>
 
@@ -21,6 +22,21 @@ HalBlePageTurner blePageTurner;
 
 namespace {
 static_assert(WIFI_MODE_NULL == 0);
+static_assert(BleBindings::MaxPeers == freeink::BleKeyboardHost::kMaxBonds);
+constexpr const char* BindingNamespace = "crossink-ble";
+bool saveBindings(const BleBindings::Store& bindings) {
+  // One small NVS blob avoids allocating an SD/JSON document while BLE runs.
+  const auto blob = BleBindings::encode(bindings);
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(BindingNamespace, NVS_READWRITE, &handle);
+  if (err == ESP_OK) {
+    err = nvs_set_blob(handle, "buttons", blob.data(), blob.size());
+    if (err == ESP_OK) err = nvs_commit(handle);
+    nvs_close(handle);
+  }
+  if (err != ESP_OK) LOG_ERR("BLE", "Button assignment save failed: %s", esp_err_to_name(err));
+  return err == ESP_OK;
+}
 auto& host() { return freeink::BleKeyboardHost::getInstance(); }
 BleMemoryPolicy::Snapshot memorySnapshot() {
   return {heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
@@ -46,9 +62,112 @@ bool HalBlePageTurner::resident() const { return host().isRunning() || host().is
 bool HalBlePageTurner::enabled() const { return optedIn && host().isRunning(); }
 const char* HalBlePageTurner::connectedName() const { return host().connectedName(); }
 
+BleBindings::Peer HalBlePageTurner::pairedPeer() const {
+  BleBindings::Peer peer{};
+  if (!host().isConnected()) return peer;
+  std::memcpy(peer.address, host().connectedAddr(), sizeof(peer.address));
+  for (uint8_t i = 0; i < host().pairedCount(); ++i) {
+    BleBindings::Peer bond{};
+    std::memcpy(bond.address, host().paired(i).addr, sizeof(bond.address));
+    bond.type = host().paired(i).addrType;
+    peer.type = bond.type;
+    if (BleBindings::same(peer, bond)) return peer;
+  }
+  return {};
+}
+
+bool HalBlePageTurner::loadBindings() {
+  if (bindingsLoaded) return true;
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(BindingNamespace, NVS_READONLY, &handle);
+  if (err == ESP_ERR_NVS_NOT_FOUND) { bindingsLoaded = true; return true; }
+  if (err != ESP_OK) {
+    LOG_ERR("BLE", "Button assignment open failed: %s", esp_err_to_name(err));
+    return false;
+  }
+  BleBindings::Blob blob{};
+  size_t size = blob.size();
+  err = nvs_get_blob(handle, "buttons", blob.data(), &size);
+  nvs_close(handle);
+  if (err == ESP_ERR_NVS_NOT_FOUND) { bindingsLoaded = true; return true; }
+  if (err != ESP_OK && err != ESP_ERR_NVS_INVALID_LENGTH) {
+    LOG_ERR("BLE", "Button assignment read failed: %s", esp_err_to_name(err));
+    return false;
+  }
+  if (err != ESP_OK || size != blob.size() || !BleBindings::decode(blob, bindings)) {
+    LOG_ERR("BLE", "Invalid saved button assignments ignored (size=%u)", static_cast<unsigned>(size));
+    learner.state = BleBindings::Learning::StorageError;
+  }
+  bindingsLoaded = true;
+  return true;
+}
+
+bool HalBlePageTurner::hasBinding(BleBindings::Action action) const { return bindings.get(pairedPeer(), action) != 0; }
+
+bool HalBlePageTurner::beginLearning(BleBindings::Action action) {
+  const auto peer = pairedPeer();
+  if (!optedIn || !BleBindings::valid(peer)) {
+    learner.state = BleBindings::Learning::Disconnected;
+    return false;
+  }
+  discardInput();
+  learner.start(peer, action, millis());
+  return true;
+}
+
+void HalBlePageTurner::discardInput() {
+  const auto peer = pairedPeer();
+  // Drop old queued input before arming/leaving; preserve held-state tracking so a
+  // cancelled capture cannot turn an already-held button into a fresh press.
+  freeink::RawButtonEvent raw;
+  while (host().popRawButton(raw)) {
+    const auto fallback = filter.accept(raw.reportId, raw.byteIndex, raw.value, raw.pressed, raw.keycode, raw.mods, raw.wasRest);
+    bindingRouter.accept(bindings, peer, raw.code(), raw.pressed, raw.wasRest, raw.mods, fallback);
+  }
+  freeink::KeyEvent key;
+  while (host().popKey(key)) {}
+}
+
+void HalBlePageTurner::cancelLearning() {
+  learner.cancel();
+  discardInput();
+}
+
+void HalBlePageTurner::completeLearning() {
+  auto next = bindings;
+  const auto result = next.assign(learner.peer, learner.action, learner.candidate);
+  if (result == BleBindings::Result::Duplicate) learner.state = BleBindings::Learning::Duplicate;
+  else if (result == BleBindings::Result::Full || result == BleBindings::Result::Invalid)
+    learner.state = BleBindings::Learning::Full;
+  else if (result == BleBindings::Result::Unchanged) learner.state = BleBindings::Learning::Saved;
+  else if (saveBindings(next)) {
+    bindings = next;
+    bindingRouter.reset();
+    learner.state = BleBindings::Learning::Saved;
+  } else learner.state = BleBindings::Learning::StorageError;
+  if (learner.state == BleBindings::Learning::Saved) failureReasons &= ~ButtonStorage;
+}
+
+bool HalBlePageTurner::resetButtons() {
+  const auto peer = pairedPeer();
+  if (!optedIn || !BleBindings::valid(peer)) { learner.state = BleBindings::Learning::Disconnected; return false; }
+  auto next = bindings;
+  if (next.reset(peer) && !saveBindings(next)) { learner.state = BleBindings::Learning::StorageError; return false; }
+  bindings = next;
+  bindingRouter.reset();
+  learner.state = BleBindings::Learning::Saved;
+  failureReasons &= ~ButtonStorage;
+  return true;
+}
+
 bool HalBlePageTurner::enable() {
   if (resident()) return optedIn;
   failureReasons = None;
+  if (!loadBindings()) {
+    state = Status::Failed;
+    failureReasons = ButtonStorage;
+    return false;
+  }
 #if CROSSINK_BLE_INPUT_DIAGNOSTICS
   diagnosticEdges = 0;
 #endif
@@ -97,12 +216,14 @@ bool HalBlePageTurner::enable() {
 }
 
 bool HalBlePageTurner::stop(uint32_t timeoutMs) {
+  learner.tick(millis(), false);
   const bool wasResident = resident();
   optedIn = false;
   pairingPasskey = 0;
   scanPending = false;
   count = 0;
   filter.reset();
+  bindingRouter.reset();
   // Also covers calls from sleep/USB handoff; end() may need later retries.
   powerManager.setPowerSaving(false);
   if (!host().end(timeoutMs)) {
@@ -131,6 +252,8 @@ bool HalBlePageTurner::connect(uint8_t index) {
   std::memcpy(selected, devices[index].address, sizeof(selected));
   pairingPasskey = 0;
   filter.reset();
+  bindingRouter.reset();
+  learner.tick(millis(), false);
   if (!host().connect(selected)) {
     LOG_ERR("BLE", "Connect request rejected");
     state = Status::Failed;
@@ -143,6 +266,16 @@ bool HalBlePageTurner::connect(uint8_t index) {
 
 void HalBlePageTurner::forget() {
   if (!optedIn || host().isConnecting()) return;
+  // Forget retains its existing all-bonds policy. Remove their assignments
+  // first; on storage failure keep both bonds and mappings available to retry.
+  const BleBindings::Store empty{};
+  if (!saveBindings(empty)) {
+    failureReasons = ButtonStorage;
+    return;
+  }
+  bindings = empty;
+  learner.cancel();
+  bindingRouter.reset();
   failureReasons = None;
   host().disconnect();
   // This experiment exposes one keyboard; forget all its stored host bonds.
@@ -204,15 +337,24 @@ int8_t HalBlePageTurner::poll() {
   } else if (state == Status::Connected) {
     LOG_INF("BLE", "Disconnected; reconnect explicitly from Bluetooth settings");
     filter.reset();
+    bindingRouter.reset();
     state = Status::Ready;
   }
+  const auto peer = pairedPeer();
+  const bool capturing = learner.state == BleBindings::Learning::Waiting;
+  learner.tick(millis(), BleBindings::valid(peer) && BleBindings::same(peer, learner.peer));
   // Drain the translated queue too; only raw press edges drive page turns.
   freeink::KeyEvent key;
   while (host().popKey(key)) {}
   freeink::RawButtonEvent raw;
   while (host().popRawButton(raw)) {
-    const int8_t direction = filter.accept(raw.reportId, raw.byteIndex, raw.value, raw.pressed, raw.keycode, raw.mods,
+    const int8_t fallback = filter.accept(raw.reportId, raw.byteIndex, raw.value, raw.pressed, raw.keycode, raw.mods,
                                            raw.wasRest);
+    const int8_t direction = bindingRouter.accept(bindings, peer, raw.code(), raw.pressed, raw.wasRest, raw.mods, fallback);
+    if (capturing) {
+      if (learner.feed(raw.code(), raw.pressed, raw.wasRest, raw.mods, raw.atMs, millis())) completeLearning();
+      continue;
+    }
 #if CROSSINK_BLE_INPUT_DIAGNOSTICS
     if (diagnosticEdges < 256) {
       ++diagnosticEdges;

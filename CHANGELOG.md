@@ -2,6 +2,7 @@
 
 ### Added
 
+- Assign Next Page and Previous Page buttons per connected BLE device; assignments survive restart while Bluetooth remains session-only.
 - Experimental, opt-in Windows BLE keyboard page turning for EPUB books on X4 Pro; Bluetooth turns off on sleep or restart.
 - Assign a physical-button-only Home/Reader shortcut that returns from nested reader menus directly to the open book, and otherwise returns Home.
 - Turn reading stats tracking on or off for the whole device or individual EPUB and XTC books, while keeping saved history and Time Left estimates.

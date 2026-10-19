@@ -13,6 +13,7 @@ class BleSettingsActivity final : public Activity {
  public:
   BleSettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
   void onEnter() override;
+  void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
 
@@ -23,7 +24,7 @@ class BleSettingsActivity final : public Activity {
   freeink::ui::ListNav listNav;
   ButtonNavigator navigator;
   // Bounded storage lives with this heap-owned screen, not on the render stack.
-  freeink::ui::ListItem items[27]{};
+  freeink::ui::ListItem items[28]{};
   char names[24][32]{};
   char connectedName[32]{};
   uint8_t found = 0;
@@ -33,6 +34,13 @@ class BleSettingsActivity final : public Activity {
   HalBlePageTurner::Status status = HalBlePageTurner::Status::Off;
   uint32_t passkey = 0;
   bool uiReady = false;
+  bool configuring = false;
+  bool nextAssigned = false;
+  bool previousAssigned = false;
+  BleBindings::Learning learning = BleBindings::Learning::Idle;
+  bool connected() const { return status == HalBlePageTurner::Status::Connected; }
+  int deviceStart() const { return connected() ? 3 : 2; }
+  int rowCount() const { return configuring ? 3 : deviceStart() + found + 1; }
   void activate();
   void snapshot();
   static void screen(UiApp::ScreenType& screen, void* user);
