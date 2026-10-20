@@ -1,3 +1,9 @@
+## [BLE v14-dev diagnostic] - 2026-10-20
+
+### Added
+
+- Opt-in X4 Pro allocation-lifetime observations around Home construction, Settings cleanup, theme replacement, and recent-book restoration. This candidate diagnoses Bluetooth restart fragmentation; it does not change memory ownership or claim a fix.
+
 ## [BLE v13-dev] - 2026-10-19
 
 ### Fixed

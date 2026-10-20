@@ -13,6 +13,8 @@
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
 
+#include <string>
+
 namespace HeapDiagnostics {
 constexpr uint32_t Internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
 inline void snapshot(const char* stage, const char* owner = "", bool regions = false) {
@@ -30,6 +32,19 @@ inline void allocation(const char* owner, const void* ptr, size_t capacity) {
   LOG_INF("HDBG", "allocation %s ptr=%p capacity=%u actual=%u external=%u", owner, ptr,
           static_cast<unsigned>(capacity), static_cast<unsigned>(heap_caps_get_allocated_size(const_cast<void*>(ptr))),
           esp_ptr_external_ram(ptr));
+}
+// data() may point inside the string object (SSO), including after a move.
+// Log storage identity only: NEVER ask the allocator for this pointer's size.
+inline void stringStorage(const char* owner, const std::string& value) {
+  LOG_INF("HDBG", "string %s object=%p data=%p length=%u capacity=%u external=%u", owner,
+          static_cast<const void*>(&value), static_cast<const void*>(value.data()), static_cast<unsigned>(value.size()),
+          static_cast<unsigned>(value.capacity()), esp_ptr_external_ram(value.data()));
+}
+// Does not inspect elements or query allocation metadata. Safe for empty vectors.
+inline void vectorStorage(const char* owner, const void* data, size_t size, size_t capacity, size_t elementSize) {
+  LOG_INF("HDBG", "vector %s data=%p size=%u capacity=%u element=%u external=%u", owner, data,
+          static_cast<unsigned>(size), static_cast<unsigned>(capacity), static_cast<unsigned>(elementSize),
+          data ? esp_ptr_external_ram(data) : false);
 }
 // Never print from a heap walker/dump callback: the allocator holds a
 // portMUX critical section while visiting blocks, starving interrupt service.

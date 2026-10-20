@@ -5,6 +5,7 @@
 #include <HalClock.h>
 #include <HalGPIO.h>
 #include <HalStorage.h>
+#include <HeapDiagnostics.h>
 #include <Logging.h>
 #include <Memory.h>
 
@@ -63,8 +64,16 @@ UITheme::UITheme() : currentMetrics(&LyraMetrics::values), currentTheme(std::mak
 }
 
 void UITheme::reload() {
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("theme before reload");
+  HeapDiagnostics::allocation("theme old", currentTheme.get(), 0);
+#endif
   auto themeType = static_cast<CrossPointSettings::UI_THEME>(SETTINGS.uiTheme);
   setTheme(themeType);
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::allocation("theme new", currentTheme.get(), 0);
+  HeapDiagnostics::snapshot("theme after reload");
+#endif
 }
 
 bool UITheme::supportsCoverGrid() {

@@ -152,6 +152,10 @@ class HomeActivity final : public Activity {
         initialMenuItem(initialMenuItemValue),
         initialBookPath(std::move(initialBookPathValue)) {}
   void onEnter() override;
+#if CROSSINK_HEAP_DIAGNOSTICS
+  // Observations only; no extra object fields or ownership changes.
+  void logDiagnosticHome(const char* stage, bool books = false) const;
+#endif
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;

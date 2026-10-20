@@ -503,6 +503,8 @@ void ActivityManager::renderTaskLoop() {
         if (lock.ownsLock() && currentActivity) {
           HeapDiagnostics::snapshot("after first render", currentActivity->name.c_str());
           HeapDiagnostics::allocation("UI theme", &GUI, 0);
+          if (currentActivity->isHomeActivity())
+            static_cast<HomeActivity*>(currentActivity.get())->logDiagnosticHome("Home after first render", true);
           renderer.logHeapAllocations();
           if (auto* cache = renderer.getFontCacheManager()) cache->logAllocations();
         } else HeapDiagnostics::snapshot("after first render (lock released)");
@@ -867,8 +869,13 @@ void ActivityManager::exitActivity(const RenderLock& lock) {
     TouchRegistry::getInstance().clear();
 #if CROSSINK_HEAP_DIAGNOSTICS
     HeapDiagnostics::snapshot("before activity exit", currentActivity->name.c_str());
+    HeapDiagnostics::allocation("outgoing activity", currentActivity.get(), 0);
 #endif
     currentActivity->onExit();
+#if CROSSINK_HEAP_DIAGNOSTICS
+    HeapDiagnostics::snapshot("before activity destruction", currentActivity->name.c_str());
+    HeapDiagnostics::allocation("activity about to destroy", currentActivity.get(), 0);
+#endif
     currentActivity.reset();
 #if CROSSINK_HEAP_DIAGNOSTICS
     HeapDiagnostics::snapshot("after activity destruction");
@@ -978,6 +985,9 @@ void ActivityManager::goToNearbyStatsSync() {
 }
 
 void ActivityManager::goToSettings(const bool dismissOnUpSwipe) {
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::stringStorage("manager path before Settings capture", preferredHomeBookPath);
+#endif
   preferredHomeBookPath.clear();
   returningHomeThroughSettings = false;
   if (currentActivity && currentActivity->isHomeActivity()) {
@@ -988,6 +998,7 @@ void ActivityManager::goToSettings(const bool dismissOnUpSwipe) {
     returningHomeThroughSettings = true;
   }
 #if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::stringStorage("manager path after Settings capture", preferredHomeBookPath);
   HeapDiagnostics::snapshot("before Settings object construction (Home still alive)");
 #endif
   auto settings = makeUniqueNoThrow<SettingsActivity>(renderer, mappedInput, dismissOnUpSwipe);
@@ -1105,12 +1116,20 @@ void ActivityManager::goToFullScreenMessage(std::string message, EpdFontFamily::
 }
 
 void ActivityManager::goHome(HomeMenuItem initialMenuItem, const HalDisplay::RefreshMode initialRefreshMode) {
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("goHome before path handoff");
+  HeapDiagnostics::stringStorage("manager path before Home move", preferredHomeBookPath);
+#endif
   std::string initialBookPath;
   if (returningHomeThroughSettings) {
     initialBookPath = std::move(preferredHomeBookPath);
   }
   preferredHomeBookPath.clear();
   returningHomeThroughSettings = false;
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::stringStorage("manager path after Home move", preferredHomeBookPath);
+  HeapDiagnostics::stringStorage("goHome local path", initialBookPath);
+#endif
 
   if (initialMenuItem == HomeMenuItem::NONE && currentActivity) {
     const auto& activityName = currentActivity->name;
@@ -1128,8 +1147,17 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, const HalDisplay::Ref
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
     }
   }
-  replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, initialRefreshMode,
-                                                 std::move(initialBookPath)));
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("before Home construction");
+  if (currentActivity) HeapDiagnostics::allocation("Home outgoing activity", currentActivity.get(), 0);
+#endif
+  auto home = std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, initialRefreshMode,
+                                             std::move(initialBookPath));
+#if CROSSINK_HEAP_DIAGNOSTICS
+  home->logDiagnosticHome("after Home construction");
+  HeapDiagnostics::stringStorage("goHome local path after construction", initialBookPath);
+#endif
+  replaceActivity(std::move(home));
 }
 void ActivityManager::goToCrashReport() { replaceActivity(std::make_unique<CrashActivity>(renderer, mappedInput)); }
 

@@ -837,7 +837,37 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
   }
 }
 
+#if CROSSINK_HEAP_DIAGNOSTICS
+void HomeActivity::logDiagnosticHome(const char* stage, bool books) const {
+  HeapDiagnostics::snapshot(stage, "Home");
+  HeapDiagnostics::allocation("Home object", this, sizeof(*this));
+  HeapDiagnostics::stringStorage("Home initial path", initialBookPath);
+  HeapDiagnostics::stringStorage("Home chapter title", currentBookChapterTitle);
+  HeapDiagnostics::vectorStorage("Home recents", recentBooks.data(), recentBooks.size(), recentBooks.capacity(),
+                                  sizeof(RecentBook));
+  HeapDiagnostics::allocation("Home cover buffer", coverBuffer, coverBufferSize);
+  HeapDiagnostics::allocation("Home cover grid", coverGridUi.get(), 0);
+  for (const auto* frame : carouselFrames) HeapDiagnostics::allocation("Home carousel frame", frame, 0);
+  if (!books) return;
+  // Bound output even for the 32-book cover-grid theme. No copies, content or
+  // allocator-size queries: these buffers can use inline string storage.
+  const size_t count = std::min(recentBooks.size(), size_t{3});
+  for (size_t i = 0; i < count; ++i) {
+    const auto& book = recentBooks[i];
+    LOG_INF("HDBG", "Home recent index=%u record=%p", static_cast<unsigned>(i), static_cast<const void*>(&book));
+    HeapDiagnostics::stringStorage("recent path", book.path);
+    HeapDiagnostics::stringStorage("recent title", book.title);
+    HeapDiagnostics::stringStorage("recent author", book.author);
+    HeapDiagnostics::stringStorage("recent cover", book.coverBmpPath);
+  }
+  LOG_INF("HDBG", "Home recent omitted=%u", static_cast<unsigned>(recentBooks.size() - count));
+}
+#endif
+
 void HomeActivity::onEnter() {
+#if CROSSINK_HEAP_DIAGNOSTICS
+  logDiagnosticHome("Home before initialization");
+#endif
   Activity::onEnter();
 #if CROSSINK_BLE_LAB
   if (labEnabled()) {
@@ -876,8 +906,19 @@ void HomeActivity::onEnter() {
   const int recentBooksToLoad =
       coverGridUi ? CoverGridHomeUi::MAX_BOOKS
                   : std::min(kMaxCachedBooks, std::max(metrics.homeRecentBooksCount, HOME_BOOK_SWAP_RECENT_COUNT));
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Home before recent store load");
+#endif
   RECENT_BOOKS.ensureLoaded();
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Home after recent store load");
+  const auto& stored = RECENT_BOOKS.getBooks();  // Already loaded above.
+  HeapDiagnostics::vectorStorage("global recents", stored.data(), stored.size(), stored.capacity(), sizeof(RecentBook));
+#endif
   loadRecentBooks(recentBooksToLoad);
+#if CROSSINK_HEAP_DIAGNOSTICS
+  logDiagnosticHome("Home after recent copies", true);
+#endif
   gridHasContinueReading = !recentBooks.empty();
 
   const auto selectInitialBook = [this, &metrics](const std::string& path) {
@@ -901,10 +942,17 @@ void HomeActivity::onEnter() {
     return false;
   };
 
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Home before selection restoration");
+#endif
   if (!selectInitialBook(initialBookPath)) {
     selectInitialBook(APP_STATE.openEpubPath);
   }
 
+#if CROSSINK_HEAP_DIAGNOSTICS
+  HeapDiagnostics::snapshot("Home after selection restoration");
+  HeapDiagnostics::stringStorage("Home selected input", initialBookPath);
+#endif
   globalStats = GlobalReadingStats::load();
   showAllDevicesStats = GlobalReadingStats::hasSyncedStats();
   allDevicesGlobalStats = showAllDevicesStats ? GlobalReadingStats::loadAggregated(globalStats) : globalStats;
@@ -950,6 +998,9 @@ void HomeActivity::onEnter() {
     preRenderCarouselFrames();
   }
 
+#if CROSSINK_HEAP_DIAGNOSTICS
+  logDiagnosticHome("Home after initialization");
+#endif
   requestUpdate();
 }
 
@@ -1094,6 +1145,9 @@ void HomeActivity::updateHighlightedBookContext(const bool allowChapterTitleRead
 }
 
 void HomeActivity::onExit() {
+#if CROSSINK_HEAP_DIAGNOSTICS
+  logDiagnosticHome("Home before exit", true);
+#endif
 #if CROSSINK_BLE_LAB
   resetLabConfirmation();
   labUi.expanded = false; labUi.focus = 0; labUi.pending.action = -2;

@@ -887,8 +887,20 @@ void SettingsActivity::onExit() {
 #endif
   releaseSettingsLists();
   if (!isFileBrowserView()) {
+#if CROSSINK_HEAP_DIAGNOSTICS
+    HeapDiagnostics::snapshot("Settings exit menus released");
+    const auto& dictionaries = dictionaryRegistry.getEntries();
+    HeapDiagnostics::vectorStorage("Settings exit catalog", dictionaries.data(), dictionaries.size(),
+                                    dictionaries.capacity(), sizeof(DictionaryEntry));
+#endif
     dictionaryRegistry.clear();
+#if CROSSINK_HEAP_DIAGNOSTICS
+    HeapDiagnostics::snapshot("Settings exit catalog released");
+#endif
     sdFontSystem.releaseRegistry();
+#if CROSSINK_HEAP_DIAGNOSTICS
+    HeapDiagnostics::snapshot("Settings exit font registry released");
+#endif
   }
   // Child Settings returns to the reader's panel; ordinary Settings still
   // returns Home in its usual portrait orientation.
@@ -1241,6 +1253,9 @@ void SettingsActivity::toggleCurrentSetting() {
         // Release before allocating the child, not after starting the radio.
         RenderLock lock(*this);
         menusSuspended = true;
+#if CROSSINK_HEAP_DIAGNOSTICS
+        HeapDiagnostics::snapshot("Settings before child menu release");
+#endif
         releaseSettingsLists();
 #if CROSSINK_HEAP_DIAGNOSTICS
         HeapDiagnostics::snapshot("Settings menus released before Bluetooth child");
@@ -1267,7 +1282,14 @@ void SettingsActivity::toggleCurrentSetting() {
         }
         startActivityForResult(std::move(activity), [this](const ActivityResult&) {
           RenderLock lock(*this);
+#if CROSSINK_HEAP_DIAGNOSTICS
+          HeapDiagnostics::snapshot("Bluetooth child returned before Settings rebuild");
+          HeapDiagnostics::allocation("Settings restored parent", this, sizeof(*this));
+#endif
           rebuildSettingsLists();
+#if CROSSINK_HEAP_DIAGNOSTICS
+          HeapDiagnostics::snapshot("Bluetooth child returned after Settings rebuild");
+#endif
           menusSuspended = false;
           SETTINGS.saveToFile();
         });
