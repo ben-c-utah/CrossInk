@@ -45,13 +45,13 @@ class LyraCarouselTheme : public LyraTheme {
   static constexpr int kSideCoverH = LyraCarouselMetrics::values.homeCoverHeight - 210;  // 390
 
   static void setPreRenderIndex(int idx);
-  void drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
+  void drawRecentBookCover(GfxRenderer& renderer, Rect rect, RecentBookView recentBooks,
                            int selectorIndex, bool& coverRendered, bool& coverBufferStored, bool& bufferRestored,
                            const std::function<bool()>& storeCoverBuffer, const BookReadingStats* stats = nullptr,
                            float progressPercent = -1.0f, const GlobalReadingStats* globalStats = nullptr,
                            const char* currentChapterTitle = nullptr) const override;
   // Live footer, shared by direct drawing and cached-artwork restoration.
-  void drawReadingProgress(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
+  void drawReadingProgress(GfxRenderer& renderer, Rect rect, RecentBookView recentBooks,
                            const BookReadingStats* stats, float progressPercent) const;
   void drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                       const std::function<const char*(int index)>& buttonLabel,
@@ -60,7 +60,7 @@ class LyraCarouselTheme : public LyraTheme {
   // Home uses this same geometry to consume swipes that start over the menu.
   static Rect buttonMenuTouchRect(const GfxRenderer& renderer, int buttonCount);
   void registerButtonMenuTouchTargets(const GfxRenderer& renderer, int buttonCount) const;
-  void drawCarouselBorder(GfxRenderer& renderer, Rect coverRect, const std::vector<RecentBook>& recentBooks,
+  void drawCarouselBorder(GfxRenderer& renderer, Rect coverRect, RecentBookView recentBooks,
                           int centerIdx, bool inCarouselRow) const override;
   void drawList(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,
                 const std::function<std::string(int index)>& rowTitle,

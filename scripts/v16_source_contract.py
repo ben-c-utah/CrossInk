@@ -99,6 +99,8 @@ DELTAS = {'src/activities/ActivityManager.cpp': [('',
                                          '\n')]}
 
 def without_v16(name, text):
+    from v17_source_contract import without_v17
+    text = without_v17(name, text)
     for before, after in reversed(DELTAS.get(name, [])):
         if text.count(after) != 1:
             raise AssertionError("V16 delta missing or ambiguous: " + name)

@@ -564,7 +564,7 @@ void drawBookText(const GfxRenderer& renderer, const Rect& coverRect, const Rece
 }
 }  // namespace
 
-void DashboardTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
+void DashboardTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, RecentBookView recentBooks,
                                          int selectorIndex, bool& coverRendered, bool& coverBufferStored,
                                          bool& bufferRestored, const std::function<bool()>& storeCoverBuffer,
                                          const BookReadingStats* stats, const float progressPercent,

@@ -13,6 +13,7 @@
 
 #include "./FileBrowserActivity.h"
 #include "QuickActions.h"
+#include "HomeRecentBooks.h"
 #include "activities/Activity.h"
 #include "activities/reader/BookReadingStats.h"
 #include "activities/reader/GlobalReadingStats.h"
@@ -53,6 +54,7 @@ class HomeActivity final : public Activity {
   bool recentsLoading = false;
   bool recentsLoaded = false;
   bool firstRenderDone = false;
+  bool externalRecentBooks = false;  // Uses the existing pre-refresh-mode padding on X4 Pro.
   // Silent restarts keep the panel's previous frame. The first Home paint may
   // need a clean waveform so X4 panels do not diff against a WiFi screen.
   HalDisplay::RefreshMode initialRefreshMode = HalDisplay::FAST_REFRESH;
@@ -103,7 +105,9 @@ class HomeActivity final : public Activity {
   uint8_t themeBeforeFrontlightPanel = 0;
   uint8_t scaleBeforeFrontlightPanel = 0;
 
-  std::vector<RecentBook> recentBooks;
+  HomeRecentBooks recentBookStorage;
+  MutableRecentBookView recentBooks() { return recentBookStorage.view(externalRecentBooks); }
+  RecentBookView recentBooks() const { return recentBookStorage.view(externalRecentBooks); }
   const HomeMenuItem initialMenuItem;
   std::string initialBookPath;
 
@@ -159,6 +163,12 @@ class HomeActivity final : public Activity {
         initialRefreshMode(initialRefreshModeValue),
         initialMenuItem(initialMenuItemValue),
         initialBookPath(std::move(initialBookPathValue)) {}
+  ~HomeActivity() override {
+    coverGridUi.reset();  // Release retained views before destroying their records, even if never entered.
+    // Match the original member destruction order: path storage, then records.
+    std::string{}.swap(initialBookPath);
+    recentBookStorage.destroy(externalRecentBooks);
+  }
   void onEnter() override;
 #if CROSSINK_HEAP_DIAGNOSTICS
   // Observations only; no extra object fields or ownership changes.

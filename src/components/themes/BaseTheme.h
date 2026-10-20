@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include "components/RecentBookView.h"
 #include <vector>
 
 #include "util/ReaderStatusBarConfig.h"
@@ -294,7 +295,7 @@ class BaseTheme {
                           bool selected) const;
   virtual bool tabIndexFromPoint(const GfxRenderer& renderer, Rect rect, const std::vector<TabInfo>& tabs, int x, int y,
                                  int& index) const;
-  virtual void drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
+  virtual void drawRecentBookCover(GfxRenderer& renderer, Rect rect, RecentBookView recentBooks,
                                    int selectorIndex, bool& coverRendered, bool& coverBufferStored,
                                    bool& bufferRestored, const std::function<bool()>& storeCoverBuffer,
                                    const BookReadingStats* stats = nullptr, float progressPercent = -1.0f,
@@ -324,7 +325,7 @@ class BaseTheme {
   virtual bool showsFileIcons() const { return false; }
   virtual bool usesCompactFileBrowserRows() const { return false; }
   virtual int compactFileBrowserRowHeight(const GfxRenderer&) const { return BaseMetrics::values.listRowHeight; }
-  virtual void drawCarouselBorder(GfxRenderer& renderer, Rect coverRect, const std::vector<RecentBook>& recentBooks,
+  virtual void drawCarouselBorder(GfxRenderer& renderer, Rect coverRect, RecentBookView recentBooks,
                                   int centerIdx, bool inCarouselRow) const {}
 
   // Shared constants and helpers for battery drawing (used by all themes)

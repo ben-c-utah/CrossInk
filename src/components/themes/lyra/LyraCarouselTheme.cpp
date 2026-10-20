@@ -157,7 +157,7 @@ void fitMenuLabel(const GfxRenderer& renderer, const char* label, int maxWidth, 
   }
 }
 
-Rect computeCenterCoverSlotRect(const GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks) {
+Rect computeCenterCoverSlotRect(const GfxRenderer& renderer, Rect rect, RecentBookView recentBooks) {
   if (recentBooks.empty()) {
     const int screenW = renderer.getScreenWidth();
     const int fallbackX = (screenW - kDisplayCenterW) / 2;
@@ -187,7 +187,7 @@ void registerCoverTarget(int bookIdx, Rect rect, int bookCount, int* registeredI
 }
 
 void registerCarouselCoverTouchTargets(const GfxRenderer& renderer, Rect rect,
-                                       const std::vector<RecentBook>& recentBooks, int centerIdx) {
+                                       RecentBookView recentBooks, int centerIdx) {
   const int bookCount = static_cast<int>(recentBooks.size());
   if (bookCount <= 0 || centerIdx < 0 || centerIdx >= bookCount) return;
 
@@ -300,7 +300,7 @@ void LyraCarouselTheme::setPreRenderIndex(int idx) {
 }
 
 void LyraCarouselTheme::drawCarouselBorder(GfxRenderer& renderer, Rect coverRect,
-                                           const std::vector<RecentBook>& recentBooks, int centerIdx,
+                                           RecentBookView recentBooks, int centerIdx,
                                            bool inCarouselRow) const {
   registerCarouselCoverTouchTargets(renderer, coverRect, recentBooks, centerIdx);
   if (!inCarouselRow) return;
@@ -313,7 +313,7 @@ void LyraCarouselTheme::drawCarouselBorder(GfxRenderer& renderer, Rect coverRect
 // Carousel cover strip
 // ---------------------------------------------------------------------------
 void LyraCarouselTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect,
-                                            const std::vector<RecentBook>& recentBooks, int selectorIndex,
+                                            RecentBookView recentBooks, int selectorIndex,
                                             bool& coverRendered, bool& coverBufferStored, bool& bufferRestored,
                                             const std::function<bool()>& storeCoverBuffer,
                                             const BookReadingStats* stats, float progressPercent,
@@ -536,7 +536,7 @@ void LyraCarouselTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect,
 }
 
 void LyraCarouselTheme::drawReadingProgress(GfxRenderer& renderer, Rect rect,
-                                            const std::vector<RecentBook>& recentBooks, const BookReadingStats* stats,
+                                            RecentBookView recentBooks, const BookReadingStats* stats,
                                             float progressPercent) const {
   if (recentBooks.empty()) return;
   const int screenW = renderer.getScreenWidth();

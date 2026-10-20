@@ -109,7 +109,7 @@ bool RoundedRaffTheme::tabIndexFromPoint(const GfxRenderer& renderer, const Rect
   return true;
 }
 
-void RoundedRaffTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
+void RoundedRaffTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, RecentBookView recentBooks,
                                            int selectorIndex, bool& coverRendered, bool& coverBufferStored,
                                            bool& bufferRestored, const std::function<bool()>& storeCoverBuffer,
                                            const BookReadingStats* stats, float progressPercent,

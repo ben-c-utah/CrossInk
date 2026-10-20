@@ -19,7 +19,7 @@ constexpr int hPaddingInSelection = 8;
 constexpr int cornerRadius = 6;
 }  // namespace
 
-void Lyra3CoversTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
+void Lyra3CoversTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect, RecentBookView recentBooks,
                                            int selectorIndex, bool& coverRendered, bool& coverBufferStored,
                                            bool& bufferRestored, const std::function<bool()>& storeCoverBuffer,
                                            const BookReadingStats* /*stats*/, float /*progressPercent*/,

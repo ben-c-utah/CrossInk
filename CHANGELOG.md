@@ -1,3 +1,9 @@
+## [BLE v17-dev experiment] - 2026-10-20
+
+### Changed
+
+- Test PSRAM placement of Home's recent-book record array only when returning from root Settings. Book strings retain their ordinary allocator; boot Home and other routes retain ordinary record storage. This is a supervised memory experiment, not a hardware-validated fix.
+
 ## [BLE v16-dev experiment] - 2026-10-20
 
 ### Changed

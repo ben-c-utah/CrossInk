@@ -2,6 +2,7 @@
 
 #include <array>
 #include <string>
+#include "components/RecentBookView.h"
 #include <vector>
 
 #include "HomeCoverCache.h"
@@ -20,7 +21,7 @@ class CoverGridHomeUi final : public UiAppHost<16, 1> {
   static constexpr int MAX_BOOKS = 1 + GRID_COLUMNS * GRID_ROWS;
   static_assert(MAX_BOOKS <= HomeCoverCache::MAX_COVERS);
   explicit CoverGridHomeUi(GfxRenderer& renderer);
-  void begin(const std::vector<RecentBook>& books, bool hasOpds, bool hasContinueReading, float featuredProgress);
+  void begin(RecentBookView books, bool hasOpds, bool hasContinueReading, float featuredProgress);
   void refreshCoverPaths();
   void setSelection(int selection) { selected = selection; }
   int selectedAction(const MappedInputManager& input);
@@ -46,7 +47,7 @@ class CoverGridHomeUi final : public UiAppHost<16, 1> {
 
   HomeCoverCache coverCache;
   GfxRenderer& renderer;
-  const std::vector<RecentBook>* books = nullptr;
+  RecentBookView books;
   std::array<std::string, MAX_BOOKS> coverPaths;
   std::array<int, MAX_BOOKS> thumbWidths{};
   std::array<int, MAX_BOOKS> thumbHeights{};

@@ -21,8 +21,8 @@ constexpr int16_t COVER_CELL_INSET = 6;
 CoverGridHomeUi::CoverGridHomeUi(GfxRenderer& renderer)
     : UiAppHost(renderer), coverCache(renderer), renderer(renderer) {}
 
-void CoverGridHomeUi::begin(const std::vector<RecentBook>& recent, bool opds, bool continuing, float featuredProgress) {
-  books = &recent;
+void CoverGridHomeUi::begin(RecentBookView recent, bool opds, bool continuing, float featuredProgress) {
+  books = recent;
   hasOpds = opds;
   if (!recent.empty()) coverCache.begin();
   reset();
@@ -35,15 +35,15 @@ void CoverGridHomeUi::begin(const std::vector<RecentBook>& recent, bool opds, bo
 
 void CoverGridHomeUi::refreshCoverPaths() {
   coverCache.invalidate();
-  for (size_t i = 0; i < books->size() && i < coverPaths.size(); ++i) refreshCoverPath(i);
+  for (size_t i = 0; i < books.size() && i < coverPaths.size(); ++i) refreshCoverPath(i);
 }
 
 void CoverGridHomeUi::refreshCoverPath(size_t index) {
-  if (index >= books->size() || index >= coverPaths.size()) return;
+  if (index >= books.size() || index >= coverPaths.size()) return;
   coverCache.invalidate(index);
   coverPaths[index] =
       thumbWidths[index] > 0 && thumbHeights[index] > 0
-          ? UITheme::getCoverThumbPath((*books)[index].coverBmpPath, thumbWidths[index], thumbHeights[index], false)
+          ? UITheme::getCoverThumbPath(books[index].coverBmpPath, thumbWidths[index], thumbHeights[index], false)
           : std::string();
 }
 
@@ -99,7 +99,7 @@ void CoverGridHomeUi::draw(UiScreen& screen) {
   screen.takeTop(UITheme::getInstance().getMetrics().batteryBarHeight, theme.spaceSm);
   const int16_t tabGap = BoardConfig::hasTouch() ? theme.spaceSm : static_cast<int16_t>(4);
   auto tabRect = screen.takeBottom(72, tabGap);
-  if (books->empty()) {
+  if (books.empty()) {
     drawTabs(screen, tabRect.inset(fui::Insets{0, COVER_CELL_INSET, 0, COVER_CELL_INSET}));
     drawEmpty(screen);
     drawHeaderBand();
@@ -149,7 +149,7 @@ void CoverGridHomeUi::drawEmpty(UiScreen& screen) {
 
 void CoverGridHomeUi::drawCurrent(UiScreen& screen, fui::Rect rect, const int coverRowHeight) {
   const auto& theme = screen.theme();
-  const auto& book = books->front();
+  const auto& book = books.front();
   card.title = book.title.c_str();
   card.author = book.author.empty() ? nullptr : book.author.c_str();
   card.meta = nullptr;
@@ -203,12 +203,12 @@ fui::Rect CoverGridHomeUi::layoutGrid(fui::Rect rect) {
 
 void CoverGridHomeUi::drawGrid(UiScreen& screen) {
   const auto rect = gridBounds;
-  grid.count = books->size() > 1 ? books->size() - 1 : 0;
+  grid.count = books.size() > 1 ? books.size() - 1 : 0;
   grid.columns = GRID_COLUMNS;
   grid.columnLayout = fui::CoverGridColumnLayout::SpaceBetween;
   grid.action = SELECT;
   grid.inputMask = fui::InputTouch;
-  grid.selectedIndex = selected > 0 && selected < static_cast<int>(books->size()) ? selected - 1 : -1;
+  grid.selectedIndex = selected > 0 && selected < static_cast<int>(books.size()) ? selected - 1 : -1;
   grid.selectionIndicator = fui::CoverGridSelectionIndicator::CoverFrame;
   grid.selectedCoverFrameGap = 6;
   grid.selectedCoverFrameWidth = 8;
@@ -233,7 +233,7 @@ void CoverGridHomeUi::drawTabs(UiScreen& screen, fui::Rect rect) {
   for (int i = 0; i < 5; ++i) {
     if (i == 2 && !hasOpds) continue;
     auto& tab = tabItems[count];
-    tab.value = books->size() + count;
+    tab.value = books.size() + count;
     tab.selected = selected == tab.value;
     tab.label = nullptr;
     ++count;
@@ -247,7 +247,7 @@ void CoverGridHomeUi::drawTabs(UiScreen& screen, fui::Rect rect) {
   tabs.iconPainterUserData = this;
   tabs.iconPainter = [](fui::DrawTarget&, fui::Rect iconRect, const fui::TabItem& tab, uint8_t, void* user) {
     const auto& self = *static_cast<CoverGridHomeUi*>(user);
-    const int index = tab.value - static_cast<int>(self.books->size());
+    const int index = tab.value - static_cast<int>(self.books.size());
     const int icon = !self.hasOpds && index >= 2 ? index + 1 : index;
     drawLucideIcon(self.renderer, *ICONS[icon], iconRect.x, iconRect.y);
     return true;

@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from v16_source_contract import without_v16
+from v17_source_contract import without_v17
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = "51e21a7eb6e17c523d717354b92b442f451ef49a"
@@ -32,6 +33,7 @@ class HomePlacementTest(unittest.TestCase):
                                 manager.index("void ActivityManager::replaceActivity(")]
         drain = manager[manager.index("      if (pendingAction == PendingAction::Replace) {"):
                         manager.index("      if (pendingAction == PendingAction::None && pendingReaderMenuAction")]
+        destruction = header.split("  ~HomeActivity() override {", 1)[1].split("\n  }", 1)[0]
         program = r'''
 #include <cassert>
 #include <cstdint>
@@ -41,7 +43,8 @@ class HomePlacementTest(unittest.TestCase):
 #include <string>
 #include <vector>
 #define LOG_ERR(...) (++errors)
-int errors=0, psramCalls=0, freed=0, constructed=0, destroyed=0;
+int errors=0, psramCalls=0, freed=0, constructed=0, destroyed=0, failAt=0;
+void* allocated[128]{};
 int exits=0, entered=0, events=0;
 char trace[128]{};
 bool fail=false;
@@ -50,7 +53,8 @@ constexpr unsigned MALLOC_CAP_SPIRAM=4, MALLOC_CAP_8BIT=2;
 void* heap_caps_aligned_alloc(size_t alignment, size_t size, unsigned caps) {
  ++psramCalls; assert(caps==(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
  assert(alignment>=alignof(void*) && (alignment&(alignment-1))==0);
- external=fail ? nullptr : std::malloc(size);
+ external=(fail || psramCalls==failAt) ? nullptr : std::malloc(size);
+ allocated[psramCalls-1]=external;
  assert(!external || reinterpret_cast<uintptr_t>(external)%alignment==0);
  return external;
 }
@@ -58,6 +62,8 @@ struct HeapByteBufferDeleter { void operator()(uint8_t* p) const {
  if(p) { ++freed; std::free(p); }
 }};
 using HeapByteBuffer=std::unique_ptr<uint8_t[],HeapByteBufferDeleter>;
+#include "HomeRecentBooks.h"
+struct CoverGridHomeUi { static constexpr size_t MAX_BOOKS=7; };
 using GfxRenderer=int;
 using MappedInputManager=int;
 struct RenderLock { void unlock() {} };
@@ -76,13 +82,18 @@ struct Activity {
 };
 struct HomeActivity final:Activity {
 ''' + declarations + r'''
- HomeMenuItem menu; HalDisplay::RefreshMode refresh; std::string path;
+ HomeMenuItem menu; HalDisplay::RefreshMode refresh; std::string initialBookPath;
+ std::unique_ptr<int> coverGridUi;
  std::vector<std::string> recents;
+ HomeRecentBooks recentBookStorage; bool externalRecentBooks=false;
+ static constexpr int kMaxCachedBooks=3;
  HomeActivity(int&,int&,HomeMenuItem m,HalDisplay::RefreshMode r,std::string p)
- :Activity("Home"),menu(m),refresh(r),path(std::move(p)) {
+ :Activity("Home"),menu(m),refresh(r),initialBookPath(std::move(p)) {
   ++constructed;trace[events++]='C';
  }
- ~HomeActivity() override { ++destroyed;trace[events++]='D'; }
+ ~HomeActivity() override {
+''' + destruction + r'''
+ ++destroyed;trace[events++]='D'; }
 };
 ''' + allocation + r'''
 struct ActivityManager {
@@ -116,33 +127,33 @@ int main(int argc,char** argv) {
    if(route==3) manager.currentActivity->name="FileBrowser";
    manager.goHome(); assert(psramCalls==0); manager.drain(); manager.stackActivities.clear();
   }
- } else if(scenario==2 || scenario==3 || scenario==4 || scenario==5) {
+ } else if(scenario==2 || scenario==3 || scenario==4 || scenario==5 || scenario==8) {
   manager.currentActivity=std::make_unique<Activity>("Settings");
   Activity* settings=manager.currentActivity.get();
   manager.returningHomeThroughSettings=true;
   manager.preferredHomeBookPath=std::string(90,'b');
   const char* backing=manager.preferredHomeBookPath.data();
-  fail=scenario==3;
+  fail=scenario==3; failAt=scenario==8 ? 2 : 0;
   manager.goHome(HomeMenuItem::NONE,HalDisplay::FULL_REFRESH);
 #if defined(ARDUINO_ARCH_ESP32) && !defined(SIMULATOR) && CROSSINK_BLE_LAB && FREEINK_FB_PSRAM
-  assert(psramCalls==1);
-  if(fail) {
+  assert(psramCalls==(fail?1:2));
+  if(fail || scenario==8) {
    assert(!manager.pendingActivity && manager.currentActivity.get()==settings);
    assert(manager.pendingAction==ActivityManager::PendingAction::None);
    assert(constructed==0 && destroyed==0 && exits==0 && errors==1);
    assert(manager.returningHomeThroughSettings && manager.preferredHomeBookPath.data()==backing);
    assert(manager.preferredHomeBookPath==std::string(90,'b'));
-   fail=false; manager.goHome(); assert(psramCalls==2); // Screen remains navigable.
+   fail=false; failAt=0; manager.goHome(); assert(psramCalls==(scenario==8?4:3)); // Screen remains navigable.
   }
-  assert(manager.pendingActivity.get()==external);
+  assert(manager.pendingActivity.get()==allocated[psramCalls-2]);
 #else
   assert(psramCalls==0);
 #endif
   assert(manager.currentActivity.get()==settings && exits==0 && entered==0);
   auto* home=static_cast<HomeActivity*>(manager.pendingActivity.get());
-  assert(home->path.data()==backing && home->path==std::string(90,'b'));
+  assert(home->initialBookPath.data()==backing && home->initialBookPath==std::string(90,'b'));
   assert(home->menu==HomeMenuItem::SETTINGS_MENU);
-  if(!fail && scenario!=3) assert(home->refresh==HalDisplay::FULL_REFRESH);
+  if(!fail && scenario!=3 && scenario!=8) assert(home->refresh==HalDisplay::FULL_REFRESH);
   assert(!manager.returningHomeThroughSettings && manager.preferredHomeBookPath.empty());
   assert(events==1 && trace[0]=='C');
   manager.drain(); assert(trace[1]=='X' && trace[2]=='E');
@@ -153,7 +164,7 @@ int main(int argc,char** argv) {
   }
   manager.currentActivity.reset(); assert(destroyed==1);
 #if defined(ARDUINO_ARCH_ESP32) && !defined(SIMULATOR)
-  assert(freed==1);
+  assert(freed==(CROSSINK_BLE_LAB && FREEINK_FB_PSRAM ? (scenario==8?3:2) : 1));
 #endif
  } else if(scenario==6) {
   for(int i=0;i<20;++i) {
@@ -164,7 +175,7 @@ int main(int argc,char** argv) {
   }
   assert(constructed==20 && destroyed==20 && exits==20 && entered==20);
 #if defined(ARDUINO_ARCH_ESP32) && !defined(SIMULATOR)
-  assert(freed==20);
+  assert(freed==(CROSSINK_BLE_LAB && FREEINK_FB_PSRAM ? 40 : 20));
 #endif
  } else if(scenario==7) {
   std::unique_ptr<Activity> home(new(std::nothrow) HomeActivity(manager.renderer,manager.mappedInput,
@@ -173,6 +184,9 @@ int main(int argc,char** argv) {
  }
 }
 '''
+        (path / "Memory.h").write_text("#pragma once\n")
+        record = (ROOT / "src/RecentBooksStore.h").read_text().split("struct RecentBook {")[1].split("class RecentBooksStore")[0]
+        (path / "RecentBooksStore.h").write_text("#pragma once\n#include <string>\n#include <cstdint>\nstruct RecentBook {" + record)
         (path / "home.cpp").write_text(program)
         compiler = ROOT / ".pio/native-tools/toolchain-gccmingw32/bin/g++.exe"
         env = dict(os.environ, PATH=str(compiler.parent) + os.pathsep + os.environ.get("PATH", ""))
@@ -183,6 +197,7 @@ int main(int argc,char** argv) {
         for index, flags in enumerate(variants):
             exe = path / f"home-{index}.exe"
             run = subprocess.run([str(compiler), "-std=c++17", "-static", "-fno-exceptions", *flags,
+                                  "-I"+str(path), "-I"+str(ROOT / "src"), "-I"+str(ROOT / "src/activities/home"),
                                   str(path / "home.cpp"), "-o", str(exe)], env=env, capture_output=True, text=True)
             if run.returncode:
                 raise AssertionError(run.stderr)
@@ -206,6 +221,9 @@ int main(int argc,char** argv) {
     def test_allocation_failure_preserves_settings_path_and_retry(self):
         self.scenario(3)
 
+    def test_record_preflight_failure_preserves_settings_path_and_retry(self):
+        self.scenario(8)
+
     def test_path_move_selection_refresh_and_lifecycle_order(self):
         self.scenario(4)
 
@@ -228,7 +246,7 @@ int main(int argc,char** argv) {
     def test_diagnostics_and_inline_object_layout_preserved(self):
         for name in ("src/activities/ActivityManager.cpp", "src/activities/home/HomeActivity.cpp"):
             before = subprocess.check_output(["git", "show", f"{BASELINE}:{name}"], cwd=ROOT).decode()
-            after = (ROOT / name).read_text()
+            after = without_v17(name, (ROOT / name).read_text())
             pattern = r"#if CROSSINK_HEAP_DIAGNOSTICS\n.*?#endif"
             self.assertEqual(re.findall(pattern, before, re.S), re.findall(pattern, after, re.S))
         source = (ROOT / "src/activities/home/HomeActivity.cpp").read_text()

@@ -159,8 +159,8 @@ inline void heap_caps_print_heap_info(uint32_t) { assert(false); }
     def test_home_observation_is_bounded_and_has_no_new_members(self):
         text = (ROOT / "src/activities/home/HomeActivity.cpp").read_text(encoding="utf-8")
         observer = text.split("void HomeActivity::logDiagnosticHome(", 1)[1].split("\n#endif", 1)[0]
-        self.assertIn("std::min(recentBooks.size(), size_t{3})", observer)
-        self.assertIn("const auto& book = recentBooks[i]", observer)
+        self.assertIn("std::min(recentBooks().size(), size_t{3})", observer)
+        self.assertIn("const auto& book = recentBooks()[i]", observer)
         self.assertNotIn("heap_caps_get_allocated_size", observer)
         self.assertNotIn("getCurrentBookPath", observer)  # Would copy the string.
         self.assertNotIn("std::vector", observer)
