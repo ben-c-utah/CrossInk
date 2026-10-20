@@ -142,7 +142,7 @@ void BleSettingsActivity::activate() {
 #endif
 #if CROSSINK_BLE_LAB
   hasLabResult = false;
-  if (!configuring && connected() && selected == deviceStart() + found + 2 + CROSSINK_HEAP_DIAGNOSTICS) {
+  if (!configuring && connected() && selected == 2) {
     bleLab.selectConnected();
     hasLabResult = true;
     labResult = bleLab.view().result;
@@ -159,7 +159,7 @@ void BleSettingsActivity::activate() {
     else blePageTurner.enable();
   } else if (selected == 1) {
     blePageTurner.scan();
-  } else if (connected() && selected == 2) {
+  } else if (connected() && selected == 2 + CROSSINK_BLE_LAB) {
     configuring = true;
     selected = 0;
     listNav.reset();
@@ -215,7 +215,7 @@ void BleSettingsActivity::loop() {
     } else if (configuring) {
       if (learning != BleBindings::Learning::Waiting) {
         configuring = false;
-        selected = connected() ? 2 : 0;
+        selected = connected() ? 2 + CROSSINK_BLE_LAB : 0;
         listNav.reset(selected);
       }
       blePageTurner.cancelLearning();
@@ -234,6 +234,13 @@ void BleSettingsActivity::loop() {
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     activate();
+    return;
+  }
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
+    const int page = listNav.pageRowsFor(rowCount());
+    listNav.scrollBy(swipe == MappedInputManager::SwipeDir::Up ? page : -page, rowCount());
+    requestUpdate();
     return;
   }
   if (configuring && learning == BleBindings::Learning::Waiting) return;
@@ -357,7 +364,7 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
     self.items[0].toggle = true;
     self.items[0].toggleChecked = self.enabled;
     self.items[1].label = tr(STR_BLE_SCAN);
-    if (self.connected()) self.items[2].label = tr(STR_BLE_CONFIGURE_BUTTONS);
+    if (self.connected()) self.items[2 + CROSSINK_BLE_LAB].label = tr(STR_BLE_CONFIGURE_BUTTONS);
     const int first = self.deviceStart();
     self.items[first + self.found].label = tr(STR_BLE_FORGET);
     self.items[first + self.found + 1].label = tr(STR_BLE_FORGET_ALL);
@@ -366,7 +373,7 @@ void BleSettingsActivity::screen(UiApp::ScreenType& screen, void* user) {
     self.items[first + self.found + 2].enabled = !blePageTurner.resident() && activityManager.diagnosticCanReclaimFonts();
 #endif
 #if CROSSINK_BLE_LAB
-    if (self.connected()) self.items[first + self.found + 2 + CROSSINK_HEAP_DIAGNOSTICS].label = tr(STR_BLE_LAB_USE_CONNECTED);
+    if (self.connected()) self.items[2].label = tr(STR_BLE_LAB_USE_CONNECTED);
 #endif
     self.items[first + self.found].sectionHeading = tr(STR_BLE_DEVICE_ACTIONS);
     if (self.found) self.items[first].sectionHeading = tr(STR_BLE_DISCOVERED_DEVICES);

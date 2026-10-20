@@ -10,6 +10,7 @@
 #include <FreeInkUIIcon.h>
 #include "components/OptionPopup.h"
 #include "components/TouchRegistry.h"
+#include "components/BleLabBluetoothIcon.h"
 #endif
 
 #include <Bitmap.h>
@@ -2268,7 +2269,7 @@ void HomeActivity::render(RenderLock&&) {
     homeCoverTop = BleLabLayout::coverTop(std::max(metrics.contentSidePadding, left), top);
     homeMenuGap = BleLabLayout::CoverGap;
     homeMenuEnd = BleLabLayout::top(pageHeight, bottom, metrics.buttonHintsHeight,
-                                     renderer.getLineHeight(SMALL_FONT_ID)) - BleLabLayout::Gap;
+                                     renderer.getLineHeight(SMALL_FONT_ID), labUi.expanded) - BleLabLayout::CoverGap;
     // Keep the full-height card: Lyra's cover and three-line title/statistics
     // rendering use its real thumbnail height, not a shrunken nominal tile.
   }
@@ -2321,7 +2322,7 @@ void HomeActivity::render(RenderLock&&) {
   if (labEnabled()) {
     int top, right, bottom, left;
     renderer.getOrientedViewableTRBL(&top, &right, &bottom, &left);
-    labRender(BleLabLayout::top(pageHeight, bottom, metrics.buttonHintsHeight, renderer.getLineHeight(SMALL_FONT_ID), labUi.expanded, menuStartY));
+    labRender(BleLabLayout::top(pageHeight, bottom, metrics.buttonHintsHeight, renderer.getLineHeight(SMALL_FONT_ID), labUi.expanded));
   }
 #endif
 
@@ -2480,7 +2481,7 @@ bool HomeActivity::labInput() {
     int tapped = -1;
     if (mappedInput.wasItemTapped(tapped)) tapped -= LabTouchFirst; else tapped = -1;
     const auto edge = BleLabInput::route(tapped, -1,
-        labUi.expanded && mappedInput.wasReleased(MappedInputManager::Button::Confirm),
+        labUi.expanded && selectorIndex == getMenuItemCount() - 1 && mappedInput.wasReleased(MappedInputManager::Button::Confirm),
         labUi.expanded && mappedInput.wasReleased(MappedInputManager::Button::Back), labUi.expanded, labUi.focus);
     if (edge.handled && edge.action >= -1) labActivate(edge.action);
   }
@@ -2490,7 +2491,7 @@ bool HomeActivity::labInput() {
     RenderLock lock(*this, RenderLock::Mode::Try);
     if (!lock.ownsLock()) return true;
     const auto next = bleLab.view();
-    if (next.revision != labUi.view.revision || next.radio != labUi.view.radio || next.link != labUi.view.link || next.wifi != labUi.view.wifi) {
+    if (next.revision != labUi.view.revision || next.radio != labUi.view.radio || next.link != labUi.view.link || next.wifi != labUi.view.wifi || next.enabled != labUi.view.enabled) {
       labUi.view = next;
       requestUpdate();
     }
@@ -2516,13 +2517,25 @@ bool HomeActivity::labInput() {
       requestUpdate();
       if (action == -2) return true;
     }
-    if (expanded && !input.handled) {
-      buttonNavigator.onNext([this] { labUi.focus = (labUi.focus + 1) % 7; requestUpdate(); });
-      buttonNavigator.onPrevious([this] { labUi.focus = (labUi.focus + 6) % 7; requestUpdate(); });
+    if (expanded && !input.handled && selectorIndex == getMenuItemCount() - 1) {
+      buttonNavigator.onNext([this] {
+        if (labUi.focus == 6) selectorIndex = 0;
+        else ++labUi.focus;
+        requestUpdate();
+      });
+      buttonNavigator.onPrevious([this] {
+        if (labUi.focus == 0) --selectorIndex;
+        else --labUi.focus;
+        requestUpdate();
+      });
+      // Only physical navigation focused inside the Lab is captured here.
+      // Ordinary Home taps must continue through the normal dispatcher below.
+      int item = -1;
+      if (!mappedInput.wasItemTapped(item) && !mappedInput.wasItemTouchedDown(item)) return true;
     }
   }
   if (action >= -1) { labActivate(action); return true; }
-  return expanded; // no new swipe binding; global gestures retain their routing
+  return false;
 }
 
 void HomeActivity::labActivate(int index) {
@@ -2575,36 +2588,35 @@ void HomeActivity::labRender(int top) {
   props.styles.focused = props.styles.selected;
   const int lineBand = BleLabLayout::band(renderer.getLineHeight(SMALL_FONT_ID));
   const int panelHeight = BleLabLayout::height(renderer.getLineHeight(SMALL_FONT_ID), labUi.expanded);
-  if (labUi.expanded) TouchRegistry::getInstance().beginFrame(); // replace back-buffer Home targets; keep live map stable until publish
   native.target.fill(fui::Rect{int16_t(side), int16_t(top), int16_t(width), int16_t(panelHeight)}, fui::Paint::solid(fui::Color::White));
-  static const StrId radios[] = {StrId::STR_BLE_LAB_OFF_STATE, StrId::STR_BLE_LAB_STARTING_STATE,
-      StrId::STR_BLE_LAB_ON_STATE, StrId::STR_BLE_STOPPING, StrId::STR_BLE_LAB_ERROR_STATE};
   static const StrId links[] = {StrId::STR_NOT_SET, StrId::STR_BLE_LAB_DISCONNECTED, StrId::STR_CONNECTING,
       StrId::STR_CONNECTED, StrId::STR_BLE_LAB_OTHER_STATE};
   char text[160];
-  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_HEADER), tr(STR_BLE_LAB_TITLE),
-                I18N.get(radios[unsigned(labUi.view.radio)]),
-                I18N.get(labUi.view.wifi ? StrId::STR_BLE_LAB_ON_STATE : StrId::STR_BLE_LAB_OFF_STATE));
+  std::snprintf(text, sizeof(text), "%s", AppVersion::versionLabel());
   props.label = text;
   props.icon = fui::bitmapFromIcon(labUi.expanded ? icon_chevron_up_24 : icon_chevron_down_24);
   props.iconOnRight = true;
   props.state = (labUi.expanded ? labUi.focus == 0 : selectorIndex == getMenuItemCount() - 1) ? fui::StateSelected : fui::StateNormal;
   props.padding = fui::Insets{4, 6, 4, 6};
+  props.styles.normal.background = fui::Paint::solid(fui::Color::LightGray);
   fui::button(native.frame, fui::Rect{int16_t(side), int16_t(top), int16_t(width), BleLabLayout::HeaderHeight}, props);
   TouchRegistry::getInstance().add(Rect{side, top, width, BleLabLayout::HeaderHeight}, LabTouchFirst, TouchRegistry::Item);
   int infoTop = top + BleLabLayout::HeaderHeight;
   if (labUi.expanded) {
     static const StrId labels[] = {StrId::STR_BLE_LAB_BLUETOOTH, StrId::STR_BLE_LAB_KOBO, StrId::STR_BLE_LAB_WIFI,
                                   StrId::STR_BLE_LAB_LOGS, StrId::STR_BLE_LAB_UPDATE, StrId::STR_BLE_LAB_RESTART};
-    static const freeink::Icon* const icons[] = {&icon_radio_tower_24, &icon_book_24, &icon_wifi_24,
-                                                &icon_file_text_24, &icon_arrow_up_24, &icon_history_24};
+    static const freeink::Icon* const icons[] = {&BleLabIcon::bluetooth, &icon_book_24, &icon_wifi_24,
+                                                &icon_lyra_transfer_24, &icon_arrow_up_24, &icon_history_24};
     const int buttonWidth = (width - 2 * BleLabLayout::ButtonGap) / 3;
     infoTop += BleLabLayout::Gap;
     props.iconOnRight = false;
+    props.styles.normal.background = fui::Paint::solid(fui::Color::White);
     for (int i = 0; i < BleLabLayout::Controls; ++i) {
       const Rect rect{side + (i % 3) * (buttonWidth + BleLabLayout::ButtonGap),
           infoTop + (i / 3) * (BleLabLayout::ButtonHeight + BleLabLayout::ButtonGap), buttonWidth, BleLabLayout::ButtonHeight};
       props.label = I18N.get(labels[i]);
+      if (i == 0) props.label = I18N.get(labUi.view.enabled ? StrId::STR_BLE_LAB_ON_STATE : StrId::STR_BLE_LAB_OFF_STATE);
+      if (i == 2) props.label = I18N.get(labUi.view.wifi ? StrId::STR_BLE_LAB_ON_STATE : StrId::STR_BLE_LAB_OFF_STATE);
       props.icon = fui::bitmapFromIcon(*icons[i]);
       props.state = labUi.focus == i + 1 ? fui::StateSelected : fui::StateNormal;
       props.enabled = i == 5 ? !labUi.view.restarting : !labUi.view.busy;
@@ -2614,10 +2626,11 @@ void HomeActivity::labRender(int top) {
     infoTop += 2 * BleLabLayout::ButtonHeight + BleLabLayout::ButtonGap + BleLabLayout::Gap;
   }
   auto style = props.text; style.align = fui::TextAlign::Left;
-  native.target.text(fui::Rect{int16_t(side), int16_t(infoTop), int16_t(width), int16_t(lineBand)}, AppVersion::versionLabel(), style);
-  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_V10_MEMORY), unsigned(labUi.view.largest), unsigned(labUi.view.free),
-                I18N.get(links[unsigned(labUi.view.link)]));
-  native.target.text(fui::Rect{int16_t(side), int16_t(infoTop + lineBand), int16_t(width), int16_t(lineBand)}, text, style);
+  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_V11_MEMORY), unsigned(labUi.view.largest),
+                I18N.get(labUi.view.enabled ? StrId::STR_BLE_LAB_ON_STATE : StrId::STR_BLE_LAB_OFF_STATE),
+                I18N.get(links[unsigned(labUi.view.link)]),
+                I18N.get(labUi.view.wifi ? StrId::STR_BLE_LAB_ON_STATE : StrId::STR_BLE_LAB_OFF_STATE));
+  native.target.text(fui::Rect{int16_t(side), int16_t(infoTop), int16_t(width), int16_t(lineBand)}, text, style);
   // Keep full controller results intact for Settings/diagnostics; Home has one
   // bounded line. Never feed verbose setup/recovery instructions to this band.
   StrId message = labUi.view.result;
@@ -2627,11 +2640,13 @@ void HomeActivity::labRender(int top) {
     case StrId::STR_BLE_LAB_STORAGE: message = StrId::STR_BLE_LAB_BRIEF_STORAGE; break;
     case StrId::STR_BLE_LAB_OTHER: message = StrId::STR_BLE_LAB_BRIEF_OTHER; break;
     case StrId::STR_BLE_LAB_PAIR_AGAIN: message = StrId::STR_BLE_LAB_BRIEF_SELECTION; break;
+    case StrId::STR_BLE_CONNECT_FAILED: case StrId::STR_BLE_LAB_SELECTED: break;
     case StrId::STR_BLE_LAB_CANCELLED: message = StrId::STR_BLE_LAB_BRIEF_CANCELLED; break;
     case StrId::STR_BLE_LAB_STOP_FAILED: message = StrId::STR_BLE_LAB_BRIEF_STOP; break;
     case StrId::STR_BLE_LAB_RESTARTING: message = StrId::STR_BLE_LAB_BRIEF_RESTARTING; break;
     case StrId::STR_BLE_LAB_RESTART_FAILED: message = StrId::STR_BLE_LAB_BRIEF_RESTART; break;
     case StrId::STR_BLE_LAB_ON: case StrId::STR_BLE_LAB_OFF: case StrId::STR_BLE_LAB_CONNECTED:
+      message = StrId::STR_NONE_OPT; break;
     case StrId::STR_BLE_LAB_WORKING: case StrId::STR_BLE_LAB_BUSY: case StrId::STR_BLE_LAB_TIMEOUT:
     case StrId::STR_BLE_LAB_CLOSE_WIFI: case StrId::STR_BLE_LAB_LOGS_OFF: case StrId::STR_BLE_LAB_TOOL_FAILED:
     case StrId::STR_BLE_LAB_LOGS_SAVED: case StrId::STR_BLE_LAB_WIFI_OPEN: case StrId::STR_BLE_LAB_UPDATE_OPEN:
@@ -2639,8 +2654,10 @@ void HomeActivity::labRender(int top) {
     default: message = StrId::STR_BLE_LAB_BRIEF_SETTINGS; break;
   }
   style.bold = true;
-  std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_RESULT), I18N.get(message));
-  native.target.text(fui::Rect{int16_t(side), int16_t(infoTop + 2 * lineBand), int16_t(width), int16_t(lineBand)}, text, style);
+  if (message != StrId::STR_NONE_OPT) {
+    std::snprintf(text, sizeof(text), tr(STR_BLE_LAB_RESULT), I18N.get(message));
+    native.target.text(fui::Rect{int16_t(side), int16_t(infoTop + lineBand), int16_t(width), int16_t(lineBand)}, text, style);
+  }
   if (labUi.paintedRevision != labUi.view.revision) {
     labUi.paintedRevision = labUi.view.revision;
     HeapDiagnostics::snapshot("Home Lab after repaint");

@@ -647,7 +647,13 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
   }
 #endif
 
-  constexpr int maxVisibleItems = 7;
+  int maxVisibleItems = 7;
+#if CROSSINK_BLE_LAB
+  if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::LYRA) {
+    maxVisibleItems = BleLabLayout::menuPageRows(rect.height);
+    rowHeight = BleLabLayout::menuRowHeight(rect.height, buttonCount);
+  }
+#endif
   const int pageItems = maxVisibleItems;
   const int totalPages = (buttonCount + pageItems - 1) / pageItems;
 

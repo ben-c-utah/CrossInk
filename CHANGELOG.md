@@ -1,3 +1,15 @@
+## [BLE v11-dev] - 2026-10-19
+
+### Fixed
+
+- Release unused Settings menu copies while Bluetooth Settings is open, so the paused parent does not pin internal heap across radio shutdown/restart. Hardware confirmation of fragmentation recovery is still required.
+- Put the connected Kobo designation action beside Bluetooth controls and allow swipes to scroll Bluetooth lists.
+- Keep ordinary Home actions tappable with the Lab expanded; reserve separate menu/Lab hit regions and allow physical navigation out of the Lab.
+
+### Changed
+
+- Increase basic-Lyra Home menu touch targets, compact the Lab identity into a gray header, and show live Bluetooth/Wi-Fi state separately from focus and Kobo connection state. Use a Bluetooth rune and send icon; suppress redundant radio-state feedback.
+
 ## [BLE v10-dev] - 2026-10-19
 
 ### Added

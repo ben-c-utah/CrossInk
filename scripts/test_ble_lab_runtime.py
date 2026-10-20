@@ -73,7 +73,7 @@ struct Manager{
 class HalBlePageTurner{public:
  enum class Status{Off,Ready,Scanning,Connecting,Connected,Stopping,Failed,LowMemory};enum{Memory=1,Wifi=2};
  Status state=Status::Off;bool on=false,held=false,enableOk=true,stopOk=true,saved=true,wifi=false;
- int starts=0,stops=0,connects=0;unsigned fail=0;
+ int starts=0,stops=0,connects=0,saves=0;unsigned fail=0;
  bool enabled()const{return on;} bool resident()const{return held;} Status status()const{return state;} unsigned failure()const{return fail;}
  bool enable(){++starts;on=held=enableOk;state=enableOk?Status::Ready:Status::LowMemory;fail=enableOk?0:Memory;return enableOk;}
  bool stop(unsigned){++stops;if(stopOk){on=held=false;state=Status::Off;}else state=Status::Stopping;return stopOk;}
@@ -81,7 +81,7 @@ class HalBlePageTurner{public:
  bool labPeerConnected(const BleBindings::Peer&)const{return state==Status::Connected;}
  bool labConnectSaved(const BleBindings::Peer&){++connects;state=Status::Connecting;return true;}
  bool labLoadSelection(BleLabPolicy::Selection& s,bool& present){present=saved;std::snprintf(s.peer.address,sizeof(s.peer.address),"a4:3c:d7:9c:93:b1");s.peer.type=0;return true;}
- bool labSaveSelection(const BleLabPolicy::Selection&){return true;} bool labClearSelection(){return true;}
+ bool labSaveSelection(const BleLabPolicy::Selection&){++saves;saved=true;return true;} bool labClearSelection(){return true;}
  bool labConnectedPeer(BleLabPolicy::Selection& s){bool p;return labLoadSelection(s,p)&&p;}
 };extern HalBlePageTurner blePageTurner;
 ''')
@@ -123,6 +123,18 @@ int main(){
  blePageTurner.state=HalBlePageTurner::Status::Connected;ticks(2);assert(bleLab.view().link==BleLab::Link::Connected);
  assert(bleLab.request(Command::Connect));ticks(3);assert(blePageTurner.connects==1);
  reset();blePageTurner.saved=false;assert(bleLab.request(Command::Connect));ticks(3);assert(blePageTurner.starts==0);
+ reset();blePageTurner.saved=false;ticks(1);assert(bleLab.view().link==BleLab::Link::NotSelected);
+ blePageTurner.saved=true;blePageTurner.on=blePageTurner.held=true;blePageTurner.state=HalBlePageTurner::Status::Connected;
+ assert(bleLab.selectConnected());assert(blePageTurner.saves==1);
+ assert(bleLab.selectConnected());assert(blePageTurner.saves==1); // repeat designation avoids NVS writes
+ bleLab=BleLab{};blePageTurner.state=HalBlePageTurner::Status::Ready;bleLab.enterHome();
+ assert(bleLab.view().link==BleLab::Link::Disconnected&&bleLab.view().enabled);
+ assert(bleLab.request(Command::Connect));assert(bleLab.view().link==BleLab::Link::Connecting);
+ ticks(4);assert(blePageTurner.connects==1);assert(!bleLab.request(Command::Connect));
+ blePageTurner.state=HalBlePageTurner::Status::Failed;ticks(2);
+ assert(bleLab.view().result==StrId::STR_BLE_CONNECT_FAILED);ticks(10);assert(blePageTurner.connects==1);
+ reset();assert(!bleLab.view().enabled);assert(bleLab.request(Command::Toggle));
+ assert(!bleLab.view().enabled);ticks(3);assert(bleLab.view().enabled);
  reset();ticks(2);assert(ESP.resets==0);assert(BleLabInput::route(-1,-1,false,true,true,6).action==-1);
  blePageTurner.on=blePageTurner.held=true;blePageTurner.stopOk=false;assert(bleLab.request(BleLabInput::command(5)));ticks(3);assert(ESP.resets==0);
  blePageTurner.stopOk=true;ticks(2);assert(ESP.resets==1&&activityManager.restart==1);

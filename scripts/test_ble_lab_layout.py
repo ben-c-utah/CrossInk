@@ -46,7 +46,8 @@ UI10 = Font('inter_10_regular')
 STRINGS = dict(re.findall(r'^(STR_\w+): "(.*)"$', (ROOT / 'lib/I18n/translations/english.yaml').read_text(encoding='utf-8'), re.M))
 HOME = (ROOT / 'src/activities/home/HomeActivity.cpp').read_text(encoding='utf-8')
 KEYS = set(re.findall(r'StrId::(STR_BLE_LAB_BRIEF_\w+)', HOME))
-KEYS.update('STR_BLE_LAB_' + s for s in ['ON', 'OFF', 'CONNECTED', 'WORKING', 'BUSY', 'TIMEOUT', 'CLOSE_WIFI', 'LOGS_OFF', 'TOOL_FAILED', 'LOGS_SAVED', 'WIFI_OPEN', 'UPDATE_OPEN', 'WIFI_RETURN', 'UPDATE_RETURN'])
+KEYS.update('STR_BLE_LAB_' + s for s in ['ON', 'OFF', 'CONNECTED', 'SELECTED', 'WORKING', 'BUSY', 'TIMEOUT', 'CLOSE_WIFI', 'LOGS_OFF', 'TOOL_FAILED', 'LOGS_SAVED', 'WIFI_OPEN', 'UPDATE_OPEN', 'WIFI_RETURN', 'UPDATE_RETURN'])
+KEYS.add('STR_BLE_CONNECT_FAILED')
 
 class LayoutTest(unittest.TestCase):
     def test_button_labels_fit_without_wrapping(self):
@@ -58,9 +59,9 @@ class LayoutTest(unittest.TestCase):
             self.assertLessEqual(SMALL.width(STRINGS[key]), 440, key)
 
     def test_worst_state_and_memory_lines_fit(self):
-        for radio, link in itertools.product(['Off', 'Starting', 'On', 'Stopping', 'Error'],
+        for radio, link in itertools.product(['Off', 'On'],
                                              ['Not Set', 'Disconnected', 'Connecting', 'Connected', 'Other Device']):
-            self.assertLessEqual(SMALL.width(STRINGS['STR_BLE_LAB_V10_MEMORY'] % (999999, 999999, link)), 440)
+            self.assertLessEqual(SMALL.width(STRINGS['STR_BLE_LAB_V11_MEMORY'] % (999999, radio, link, 'Off')), 440)
         self.assertLessEqual(SMALL.width(STRINGS['STR_BLE_LAB_MEMORY'] % (999999, 999999)), 440)
 
     def test_header_fits_with_chevron(self):
@@ -100,20 +101,20 @@ def preview(path, expanded=False):
     SMALL.draw(canvas,208,184,'Total time: 12h 34m')
     SMALL.draw(canvas,208,204,'Avg session: 24m')
     UI10.draw(canvas,208,232,'100%');box(208,260,238,4)
-    for i,text in enumerate(['Browse Files','Library','OPDS Browser','Reading Stats','Saved Items','File Transfer','Settings']):
-        BODY.draw(canvas,36,276+i*46+6,text)
-    top=506 if expanded else 644
-    height=222 if expanded else 104
+    for i,text in enumerate(['Browse Files','Library','Reading Stats','File Transfer','Settings']):
+        BODY.draw(canvas,36,288+i*(50 if expanded else 73)+6,text)
+    top=550 if expanded else 668
+    height=198 if expanded else 80
     box(20,top,440,height,255,255)
     box(20,top,440,32)
-    header=STRINGS['STR_BLE_LAB_HEADER']%('Bluetooth Lab','Off','Off')
+    header='CrossInk BLE v11-dev <build-id>'
     SMALL.draw(canvas,30,top+6,header)
     icon('chevron_up' if expanded else 'chevron_down',426,top+4,0)
     info=top+32
     if expanded:
         info+=4
-        names=['radio_tower','book','wifi','file_text','arrow_up','history']
-        labels=['Bluetooth','Kobo','Wi-Fi','Logs','Update','Restart']
+        names=['radio_tower','book','wifi','lyra_transfer','arrow_up','history']
+        labels=['Off','Kobo','Off','Logs','Update','Restart']
         for i,label in enumerate(labels):
             x=20+(i%3)*148;y=info+(i//3)*58;selected=i==0
             box(x,y,142,52,0 if selected else 255)
@@ -122,9 +123,8 @@ def preview(path, expanded=False):
             icon(names[i],left,y+14,ink)
             SMALL.draw(canvas,left+28,y+16,label,ink)
         info+=114
-    SMALL.draw(canvas,20,info+2,'CrossInk BLE v10-dev <build-id>')
-    SMALL.draw(canvas,20,info+26,'Max 47092 B | Free 142656 B | Kobo Off')
-    SMALL.draw(canvas,20,info+50,'Not enough memory')
+    SMALL.draw(canvas,20,info+2,'Max 118772 | BT Off | Kobo Not Set | WiFi Off')
+    SMALL.draw(canvas,20,info+26,'Select Kobo in Bluetooth Settings')
     SMALL.draw(canvas,20,768,'Read        Select             Up        Down')
     raw=b''.join(b'\0'+canvas[y*480:(y+1)*480] for y in range(800))
     def chunk(kind,data):return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data))

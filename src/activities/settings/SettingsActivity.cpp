@@ -283,6 +283,33 @@ SettingsActivity::SettingsActivity(GfxRenderer& renderer, MappedInputManager& ma
 #endif
 }
 
+void SettingsActivity::releaseSettingsLists() {
+  currentSettings = nullptr;
+  settingsCount = 0;
+  // swap destroys nested enum/string storage AND releases capacity; clear() alone does not.
+  std::vector<SettingInfo>().swap(displaySettings);
+  std::vector<SettingInfo>().swap(displaySleepSettings);
+  std::vector<SettingInfo>().swap(displayFrontlightSettings);
+  std::vector<SettingInfo>().swap(readerSettings);
+  std::vector<SettingInfo>().swap(readerFontSettings);
+  std::vector<SettingInfo>().swap(readerPageLayoutSettings);
+  std::vector<SettingInfo>().swap(readerScreenMarginSettings);
+  std::vector<SettingInfo>().swap(controlsSettings);
+  std::vector<SettingInfo>().swap(controlsPowerSettings);
+  std::vector<SettingInfo>().swap(controlsHomeButtonSettings);
+  std::vector<SettingInfo>().swap(controlsFrontButtonSettings);
+  std::vector<SettingInfo>().swap(controlsSideButtonSettings);
+  std::vector<SettingInfo>().swap(controlsTapsGesturesSettings);
+  std::vector<SettingInfo>().swap(controlsTwoFingerSwipeSettings);
+  std::vector<SettingInfo>().swap(controlsEdgeGestureSettings);
+  std::vector<SettingInfo>().swap(systemSettings);
+  std::vector<SettingInfo>().swap(systemDeviceSettings);
+  std::vector<SettingInfo>().swap(systemFilesCacheSettings);
+  std::vector<SettingInfo>().swap(fileBrowserSettings);
+  std::vector<SettingInfo>().swap(systemReadingStatsSettings);
+  std::vector<SettingInfo>().swap(systemGlobalStatsSettings);
+}
+
 void SettingsActivity::rebuildSettingsLists() {
   displaySettings.clear();
   displaySleepSettings.clear();
@@ -831,6 +858,7 @@ void SettingsActivity::onExit() {
   HeapDiagnostics::snapshot("Settings before cleanup");
   logDiagnosticSettings("exiting");
 #endif
+  releaseSettingsLists();
   if (!isFileBrowserView()) {
     dictionaryRegistry.clear();
     sdFontSystem.releaseRegistry();
@@ -1181,13 +1209,29 @@ void SettingsActivity::toggleCurrentSetting() {
       case SettingAction::Bluetooth:
 #if CROSSINK_APP_CAP_BLE_PAGE_TURNER
       {
+        // The parent stays on ActivityManager's stack. Its menu copies are not
+        // used by the child and would pin internal heap between BLE allocations.
+        // Release before allocating the child, not after starting the radio.
+        RenderLock lock(*this);
+        menusSuspended = true;
+        releaseSettingsLists();
+#if CROSSINK_HEAP_DIAGNOSTICS
+        HeapDiagnostics::snapshot("Settings menus released before Bluetooth child");
+#endif
         // One activity allocation owns the fixed UI/snapshot storage until exit.
         auto activity = makeUniqueNoThrow<BleSettingsActivity>(renderer, mappedInput);
         if (!activity) {
           LOG_ERR("SET", "Failed to allocate Bluetooth settings");
+          rebuildSettingsLists();
+          menusSuspended = false;
           break;
         }
-        startActivityForResult(std::move(activity), resultHandler);
+        startActivityForResult(std::move(activity), [this](const ActivityResult&) {
+          RenderLock lock(*this);
+          rebuildSettingsLists();
+          menusSuspended = false;
+          SETTINGS.saveToFile();
+        });
       }
 #endif
         break;
@@ -1641,6 +1685,7 @@ void SettingsActivity::buildSettingsScreen(UiApp::ScreenType& screen) {
 }
 
 void SettingsActivity::render(RenderLock&&) {
+  if (menusSuspended) return;
   if (optionPopup.processRender(renderer, mappedInput)) return;
 
   renderer.clearScreen();

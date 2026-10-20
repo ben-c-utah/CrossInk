@@ -259,6 +259,8 @@ class SettingsActivity final : public Activity {
   std::vector<SettingInfo> systemReadingStatsSettings;
   std::vector<SettingInfo> systemGlobalStatsSettings;
   const std::vector<SettingInfo>* currentSettings = nullptr;
+  bool menusSuspended = false;
+  void releaseSettingsLists();
 
   bool preserveQuickResumeTimeoutOn = false;
   bool quickResumeTimeoutAutoEnabled = false;

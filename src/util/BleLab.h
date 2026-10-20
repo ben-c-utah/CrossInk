@@ -13,7 +13,7 @@ class BleLab {
     Link link = Link::NotSelected;
     StrId result = StrId::STR_NONE_OPT;
     uint32_t free = 0, largest = 0, revision = 0;
-    bool busy = false, restarting = false, wifi = false;
+    bool busy = false, restarting = false, wifi = false, enabled = false;
   };
   void enterHome();
   bool request(BleLabPolicy::Command command);

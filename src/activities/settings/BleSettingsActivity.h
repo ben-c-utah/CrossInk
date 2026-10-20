@@ -17,6 +17,7 @@ class BleSettingsActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
+  bool allowGlobalHomeSwipeGesture() const override { return false; }
 
  private:
   using UiApp = freeink::ui::FreeInkApp<32, 2>;
@@ -41,11 +42,11 @@ class BleSettingsActivity final : public Activity {
   StrId cacheResult = StrId::STR_NONE_OPT;
   uint32_t cacheBefore = 0, cacheAfter = 0;
   bool cacheRan = false;
+  void reclaimDiagnosticCaches();
+#endif
 #if CROSSINK_BLE_LAB
   bool hasLabResult = false;
   StrId labResult = StrId::STR_NONE_OPT;
-#endif
-  void reclaimDiagnosticCaches();
 #endif
   bool managing = false;
   bool savedListOk = true;
@@ -65,8 +66,8 @@ class BleSettingsActivity final : public Activity {
   bool previousAssigned = false;
   BleBindings::Learning learning = BleBindings::Learning::Idle;
   bool connected() const { return status == HalBlePageTurner::Status::Connected; }
-  int deviceStart() const { return connected() ? 3 : 2; }
-  int rowCount() const { return configuring ? 3 : managing ? (savedCount ? savedCount : 1) : deviceStart() + found + 2 + CROSSINK_HEAP_DIAGNOSTICS + (CROSSINK_BLE_LAB && connected() ? 1 : 0); }
+  int deviceStart() const { return connected() ? 3 + CROSSINK_BLE_LAB : 2; }
+  int rowCount() const { return configuring ? 3 : managing ? (savedCount ? savedCount : 1) : deviceStart() + found + 2 + CROSSINK_HEAP_DIAGNOSTICS; }
   void activate();
   void snapshot();
   static void screen(UiApp::ScreenType& screen, void* user);

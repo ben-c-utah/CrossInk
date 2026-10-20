@@ -79,6 +79,7 @@ bool BleLab::clearSelection(bool all, const char* address, uint8_t type) {
 
 BleLab::View BleLab::view() const {
   View out;
+  out.enabled = blePageTurner.enabled();
   out.wifi = blePageTurner.labWifiActive();
   out.free = free; out.largest = largest; out.revision = revision; out.result = result;
   out.busy = pending != Command::None || phase != Phase::Idle ||
@@ -95,7 +96,8 @@ BleLab::View BleLab::view() const {
   if (!selected) out.link = Link::NotSelected;
   else if (blePageTurner.labPeerConnected(selection.peer)) out.link = Link::Connected;
   else if (blePageTurner.status() == HalBlePageTurner::Status::Connected) out.link = Link::Other;
-  else if (phase == Phase::AwaitConnection) out.link = Link::Connecting;
+  else if (phase == Phase::AwaitConnection || phase == Phase::Connect ||
+           (pending == Command::Connect && selected)) out.link = Link::Connecting;
   else out.link = Link::Disconnected;
   return out;
 }
