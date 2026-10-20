@@ -1116,6 +1116,10 @@ void ActivityManager::goToFullScreenMessage(std::string message, EpdFontFamily::
 }
 
 void ActivityManager::goHome(HomeMenuItem initialMenuItem, const HalDisplay::RefreshMode initialRefreshMode) {
+#if defined(ARDUINO_ARCH_ESP32) && !defined(SIMULATOR) && CROSSINK_BLE_LAB && FREEINK_FB_PSRAM
+  const bool settingsReturn = returningHomeThroughSettings && currentActivity &&
+                              currentActivity->name == "Settings" && stackActivities.empty();
+#endif
 #if CROSSINK_HEAP_DIAGNOSTICS
   HeapDiagnostics::snapshot("goHome before path handoff");
   HeapDiagnostics::stringStorage("manager path before Home move", preferredHomeBookPath);
@@ -1151,8 +1155,23 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem, const HalDisplay::Ref
   HeapDiagnostics::snapshot("before Home construction");
   if (currentActivity) HeapDiagnostics::allocation("Home outgoing activity", currentActivity.get(), 0);
 #endif
-  auto home = std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, initialRefreshMode,
-                                             std::move(initialBookPath));
+  std::unique_ptr<HomeActivity> home;
+#if defined(ARDUINO_ARCH_ESP32) && !defined(SIMULATOR) && CROSSINK_BLE_LAB && FREEINK_FB_PSRAM
+  if (settingsReturn) {
+    home = HomeActivity::createForSettingsReturn(renderer, mappedInput, initialMenuItem, initialRefreshMode,
+                                                 initialBookPath);
+    if (!home) {
+      preferredHomeBookPath = std::move(initialBookPath);
+      returningHomeThroughSettings = true;
+      LOG_ERR("ACT", "Cannot allocate Home in PSRAM; staying in Settings");
+      return;
+    }
+  } else
+#endif
+  {
+    home = std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem, initialRefreshMode,
+                                          std::move(initialBookPath));
+  }
 #if CROSSINK_HEAP_DIAGNOSTICS
   home->logDiagnosticHome("after Home construction");
   HeapDiagnostics::stringStorage("goHome local path after construction", initialBookPath);

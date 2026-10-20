@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 import unittest
 
+from v16_source_contract import without_v16
+
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = "a626db46af2bb039478e6691521be4fb8bba0b9e"
 
@@ -118,6 +120,7 @@ inline void heap_caps_print_heap_info(uint32_t) { assert(false); }
                 before = subprocess.check_output(
                     ["git", "show", f"{BASELINE}:{name}"], cwd=ROOT).decode("utf-8")
                 after = (ROOT / name).read_text(encoding="utf-8")
+                after = without_v16(name, after)
                 before, after = without_diagnostics(before), without_diagnostics(after)
                 # Sole non-diagnostic refactor: name the same unique_ptr to observe
                 # it before replaceActivity. Construction still precedes onExit.

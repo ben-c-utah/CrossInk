@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 import unittest
 
+from v16_source_contract import without_v16
+
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = "8acf8fed34d2c90c4960613ff5966afbe0a7ae99"
 
@@ -201,7 +203,7 @@ int main(int argc,char** argv) {
                      "src/activities/home/HomeActivity.cpp", "src/activities/home/HomeActivity.h"):
             with self.subTest(file=name):
                 original = subprocess.check_output(["git", "show", f"{BASELINE}:{name}"], cwd=ROOT).decode("utf-8")
-                self.assertEqual((ROOT / name).read_text(encoding="utf-8"), original)
+                self.assertEqual(without_v16(name, (ROOT / name).read_text(encoding="utf-8")), original)
 
     def test_diagnostic_records_and_existing_theme_storage_members_preserved(self):
         for name in ("src/components/UITheme.cpp", "src/activities/settings/SettingsActivity.cpp"):

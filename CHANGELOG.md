@@ -1,3 +1,9 @@
+## [BLE v16-dev experiment] - 2026-10-20
+
+### Changed
+
+- Place only the Home controller created on a root Settings return in PSRAM in the X4 Pro Bluetooth Lab build. Boot Home, metadata storage and navigation ordering remain unchanged. This controlled memory-placement experiment requires hardware validation; no fragmentation fix is claimed.
+
 ## [BLE v15-dev experiment] - 2026-10-20
 
 ### Changed

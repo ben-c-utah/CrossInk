@@ -3,7 +3,9 @@
 #include <BleLabConfig.h>
 
 #include <array>
+#include <cstddef>
 #include <functional>
+#include <new>
 #include <optional>
 #include <string>
 #include <utility>
@@ -143,6 +145,12 @@ class HomeActivity final : public Activity {
   void loadRecentCovers(int coverHeight);
 
  public:
+  // Allocate storage before consuming the path; failure leaves the caller intact.
+  static std::unique_ptr<HomeActivity> createForSettingsReturn(
+      GfxRenderer& renderer, MappedInputManager& mappedInput, HomeMenuItem initialMenuItem,
+      HalDisplay::RefreshMode initialRefreshMode, std::string& initialBookPath);
+  static void operator delete(void* ptr) noexcept;
+
   explicit HomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                         HomeMenuItem initialMenuItemValue = HomeMenuItem::NONE,
                         HalDisplay::RefreshMode initialRefreshModeValue = HalDisplay::FAST_REFRESH,

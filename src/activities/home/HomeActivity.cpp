@@ -55,6 +55,41 @@
 #include "components/themes/minimal/MinimalTheme.h"
 #include "fontIds.h"
 
+std::unique_ptr<HomeActivity> HomeActivity::createForSettingsReturn(
+    GfxRenderer& renderer, MappedInputManager& mappedInput, const HomeMenuItem initialMenuItem,
+    const HalDisplay::RefreshMode initialRefreshMode, std::string& initialBookPath) {
+  // One independently owned UI controller, not DMA/ISR storage. Its containers
+  // retain their ordinary backing allocators. Never fall back to internal RAM.
+#if defined(ARDUINO_ARCH_ESP32) && !defined(SIMULATOR) && CROSSINK_BLE_LAB && FREEINK_FB_PSRAM
+  HeapByteBuffer storage(static_cast<uint8_t*>(heap_caps_aligned_alloc(
+      alignof(HomeActivity), sizeof(HomeActivity), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+  if (!storage) return {};
+  // Raw storage stays owned until construction succeeds. Do not evaluate the
+  // moving constructor argument before checking the fallible allocation.
+  std::unique_ptr<HomeActivity> home(::new (storage.get()) HomeActivity(
+      renderer, mappedInput, initialMenuItem, initialRefreshMode, std::move(initialBookPath)));
+  storage.release();  // Ownership passes to home and its matching class delete.
+  return home;
+#else
+  (void)renderer;
+  (void)mappedInput;
+  (void)initialMenuItem;
+  (void)initialRefreshMode;
+  (void)initialBookPath;
+  return {};
+#endif
+}
+
+void HomeActivity::operator delete(void* ptr) noexcept {
+#if defined(ARDUINO_ARCH_ESP32) && !defined(SIMULATOR)
+  // ESP32 global new uses malloc; IDF free and heap_caps_free share ownership.
+  // Virtual Activity destruction selects this for either Home allocation path.
+  HeapByteBufferDeleter{}(static_cast<uint8_t*>(ptr));
+#else
+  ::operator delete(ptr);
+#endif
+}
+
 namespace {
 #if CROSSINK_BLE_LAB
 // Static, fixed-size UI state avoids a new navigation-time heap allocation.
