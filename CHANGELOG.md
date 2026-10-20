@@ -1,3 +1,14 @@
+## [BLE v12-dev] - 2026-10-19
+
+### Fixed
+
+- Release the Settings-only dictionary catalog during Bluetooth Settings, restoring it before rebuilding Settings rows. Avoid reserving an empty catalog when no valid dictionary root exists. Contiguous-heap recovery remains subject to hardware validation.
+
+### Changed
+
+- Stage firmware with readable device/version/hash filenames, while verifying and reusing previously staged hash-only files without overwriting them.
+- Collect Logs can reveal a full serial capture in Explorer and report collected files and Wi-Fi download outcomes in the existing terminal.
+
 ## [BLE v11-dev] - 2026-10-19
 
 ### Fixed

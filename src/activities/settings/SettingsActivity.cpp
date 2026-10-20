@@ -790,7 +790,10 @@ void SettingsActivity::onEnter() {
 #if CROSSINK_HEAP_DIAGNOSTICS
     HeapDiagnostics::snapshot("Settings before dictionary discovery");
 #endif
-    dictionaryRegistry.discover();
+    // Use the same refresh gate as rebuildSettingsLists(), including when a
+    // Bluetooth child was dismissed directly to Home with the catalog dirty.
+    dictionaryRegistry.markDirty();
+    dictionaryRegistry.refreshIfDirty();
 #if CROSSINK_HEAP_DIAGNOSTICS
     HeapDiagnostics::snapshot("Settings after dictionary discovery");
 #endif
@@ -1217,6 +1220,18 @@ void SettingsActivity::toggleCurrentSetting() {
         releaseSettingsLists();
 #if CROSSINK_HEAP_DIAGNOSTICS
         HeapDiagnostics::snapshot("Settings menus released before Bluetooth child");
+        const auto& dictionaries = dictionaryRegistry.getEntries();
+        HeapDiagnostics::allocation("Settings retained dictionary catalog", dictionaries.data(),
+                                    dictionaries.capacity() * sizeof(DictionaryEntry));
+        HeapDiagnostics::allocation("Settings retained parent", this, sizeof(*this));
+#endif
+        // Settings UI metadata, not the active dictionary or its persisted
+        // selection. The child needs neither catalog nor menu copies. A later
+        // rebuild refreshes the catalog before constructing dictionary rows.
+        dictionaryRegistry.clear();
+        dictionaryRegistry.markDirty();
+#if CROSSINK_HEAP_DIAGNOSTICS
+        HeapDiagnostics::snapshot("Settings catalog released before Bluetooth child");
 #endif
         // One activity allocation owns the fixed UI/snapshot storage until exit.
         auto activity = makeUniqueNoThrow<BleSettingsActivity>(renderer, mappedInput);

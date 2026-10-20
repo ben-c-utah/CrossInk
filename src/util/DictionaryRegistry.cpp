@@ -21,7 +21,6 @@ static constexpr const char* DICT_ROOT_CANDIDATES[] = {
 
 bool DictionaryRegistry::discover() {
   entries_.clear();
-  entries_.reserve(16);
   root_.clear();
 
   char resolvedRoot[32];
@@ -33,6 +32,7 @@ bool DictionaryRegistry::discover() {
   if (foundRoot) root_ = resolvedRoot;
 
   if (root_.empty()) {
+    clear();  // No catalog to retain, including capacity from an earlier scan.
     LOG_DBG("DREG", "No dictionary directory found on SD card");
     return false;
   }
@@ -41,9 +41,11 @@ bool DictionaryRegistry::discover() {
   if (!rootDir || !rootDir.isDirectory()) {
     LOG_ERR("DREG", "Could not open dictionary directory: %s", root_.c_str());
     if (rootDir) rootDir.close();
+    clear();
     return false;
   }
 
+  entries_.reserve(16);
   rootDir.rewindDirectory();
 
   char name[DICT_FILENAME_BUFFER_SIZE];

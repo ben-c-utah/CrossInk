@@ -46,6 +46,8 @@ class HelperTest(unittest.TestCase):
                 self.send_response(200);self.end_headers();self.wfile.write(b'OK')
             def do_GET(self):
                 assert self.path.startswith('/download?path=')
+                if not Handler.payload:
+                    self.send_response(404);self.end_headers();return
                 self.send_response(200);self.end_headers();self.wfile.write(b'wrong' if Handler.corrupt else Handler.payload)
         server=HTTPServer(('127.0.0.1',0),Handler);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:

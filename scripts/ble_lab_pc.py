@@ -68,9 +68,9 @@ def base_url(value):
         raise ValueError('Use the File Transfer root URL shown on the device, e.g. http://192.168.1.50')
     return value.rstrip('/')
 
-def download(url, remote, destination, limit=16384):
+def download(url, remote, destination, limit=16384, timeout=30):
     address = base_url(url) + '/download?' + urllib.parse.urlencode({'path': remote})
-    with urllib.request.urlopen(address, timeout=30) as response, destination.open('wb') as output:
+    with urllib.request.urlopen(address, timeout=timeout) as response, destination.open('wb') as output:
         total = 0
         for block in iter(lambda: response.read(65536), b''):
             total += len(block)
@@ -78,6 +78,54 @@ def download(url, remote, destination, limit=16384):
                 raise ValueError('Download exceeds expected size limit')
             output.write(block)
     return total
+
+def http_error_details(exc):
+    with exc:
+        detail = exc.read(4096).decode('utf-8', errors='replace').strip()
+    return f'HTTP {exc.code} {exc.reason} at {exc.url}' + (f': {detail}' if detail else '')
+
+
+def verify_staged(url, remote, size, expected):
+    """Return False only for an explicit 404; all other failures stop staging."""
+    address = base_url(url) + '/download?' + urllib.parse.urlencode({'path': '/' + remote})
+    try:
+        response = urllib.request.urlopen(address, timeout=180)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            exc.close()
+            return False
+        raise ValueError(http_error_details(exc)) from exc
+    hasher, total = hashlib.sha256(), 0
+    with response:
+        for block in iter(lambda: response.read(65536), b''):
+            total += len(block)
+            if total > size:
+                raise ValueError(f'Remote /{remote} size mismatch; refusing to overwrite or delete')
+            hasher.update(block)
+    if total != size or hasher.hexdigest() != expected:
+        raise ValueError(f'Remote /{remote} size/SHA-256 mismatch; refusing to overwrite or delete')
+    return True
+
+
+def staging_names(meta, remote=None):
+    """New picker name first; retain the historic SHA-only name as a read-only alias."""
+    if remote is not None:
+        names = (remote,)
+    else:
+        digest = str(meta['sha256']).lower()
+        if not re.fullmatch(r'[0-9a-f]{64}', digest) or meta.get('target') != 'x4-pro':
+            raise ValueError('Staging names require an X4 Pro manifest and full SHA-256')
+        version = meta.get('revision')
+        if not version:
+            match = re.search(r'\bv(\d+(?:\.\d+)*)', str(meta.get('displayIdentity', '')), re.I)
+            version = 'V' + match.group(1) if match else meta.get('upstreamVersion', 'Unversioned')
+        if not isinstance(version, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]{0,47}', version):
+            raise ValueError('Manifest version must be a simple readable version token')
+        names = (f'CrossInk-BLE-X4Pro-{version}-{digest[:8]}.bin', f'CrossInk-{digest[:12]}.bin')
+    if any(not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*\.bin', name) for name in names):
+        raise ValueError('--name must be a simple root .bin filename')
+    return names
+
 
 def stage(url, binary, manifest, remote):
     meta = json.loads(manifest.read_text(encoding='utf-8-sig'))
@@ -87,29 +135,39 @@ def stage(url, binary, manifest, remote):
         raise ValueError('Binary size/hash does not match the supplied build manifest')
     if meta.get('target') != 'x4-pro':
         raise ValueError('Manifest target must be x4-pro')
-    remote = remote or ('CrossInk-' + expected[:12] + '.bin')
-    if not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*\.bin', remote):
-        raise ValueError('--name must be a simple root .bin filename')
+    names = staging_names(meta, remote)
+    remote = names[0]
+    result = {'remotePath': '/' + remote, 'bytes': len(payload), 'sha256': expected,
+              'result': 'ALREADY STAGED AND READ-BACK VERIFIED'}
+    for name in names:
+        if verify_staged(url, name, len(payload), expected):
+            result['remotePath'] = '/' + name
+            return result
     # Existing multipart /upload?path=/ route. No update/install endpoint.
     boundary = 'CrossInkBleLabFileTransferBoundary'
     body = ('--' + boundary + '\r\nContent-Disposition: form-data; name="file"; filename="' + remote +
             '"\r\nContent-Type: application/octet-stream\r\n\r\n').encode() + payload + ('\r\n--' + boundary + '--\r\n').encode()
     request = urllib.request.Request(base_url(url) + '/upload?path=%2F', data=body, method='POST',
                                     headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
-    with urllib.request.urlopen(request, timeout=180) as response:
-        response.read(16384)
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            response.read(16384)
+    except urllib.error.HTTPError as exc:
+        code = exc.code
+        details = http_error_details(exc)
+        # Another uploader may have created the file after our initial 404.
+        if code in (400, 409):
+            try:
+                if verify_staged(url, remote, len(payload), expected):
+                    return result
+            except (OSError, ValueError) as verification:
+                raise ValueError(f'{details}; collision verification failed: {verification}') from verification
+        raise ValueError(details) from exc
     # Independently verify what the server stored. Never trust just HTTP 200.
-    address = base_url(url) + '/download?' + urllib.parse.urlencode({'path': '/' + remote})
-    hasher, total = hashlib.sha256(), 0
-    with urllib.request.urlopen(address, timeout=180) as response:
-        for block in iter(lambda: response.read(65536), b''):
-            total += len(block)
-            if total > len(payload): raise ValueError('Read-back larger than expected')
-            hasher.update(block)
-    if total != len(payload) or hasher.hexdigest() != expected:
-        raise ValueError('Staging verification FAILED; do not install this file')
-    return {'remotePath': '/' + remote, 'bytes': total, 'sha256': expected,
-            'result': 'STAGED AND READ-BACK VERIFIED ONLY; installation requires device confirmation'}
+    if not verify_staged(url, remote, len(payload), expected):
+        raise ValueError('Staging verification FAILED: remote file missing; do not install this file')
+    result['result'] = 'STAGED AND READ-BACK VERIFIED ONLY; installation requires device confirmation'
+    return result
 
 def collect(args):
     logs = sorted(args.logs_dir.glob('device-monitor*.log'), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -129,13 +187,25 @@ def collect(args):
         info['deviceDownloads'] = {}
         for remote in ['ble-lab-diagnostics.txt', 'ble-lab-crash.txt']:
             try:
-                info['deviceDownloads'][remote] = download(args.url, '/' + remote, folder / remote)
+                info['deviceDownloads'][remote] = download(args.url, '/' + remote, folder / remote,
+                                                         timeout=getattr(args, 'download_timeout', 30))
                 if remote == 'ble-lab-diagnostics.txt':
                     exported = re.search(r'^identity=(.+)$', (folder / remote).read_text(encoding='utf-8', errors='replace'), re.M)
                     info['savedExportIdentity'] = exported.group(1) if exported else 'unverified'
             except urllib.error.HTTPError as exc:
-                if exc.code != 404 or remote != 'ble-lab-crash.txt': raise
-                info['deviceDownloads'][remote] = 'absent'
+                if exc.code == 404 and remote == 'ble-lab-crash.txt':
+                    exc.close()
+                    info['deviceDownloads'][remote] = 'absent'
+                elif getattr(args, 'tolerate_download_errors', False):
+                    info['deviceDownloads'][remote] = {'error': http_error_details(exc)}
+                    (folder / remote).unlink(missing_ok=True)
+                else:
+                    raise
+            except (OSError, ValueError, urllib.error.URLError) as exc:
+                if not getattr(args, 'tolerate_download_errors', False):
+                    raise
+                info['deviceDownloads'][remote] = {'error': str(exc)}
+                (folder / remote).unlink(missing_ok=True)
     (folder / 'session.json').write_text(json.dumps(info, indent=2) + '\n', encoding='utf-8')
     print(folder)
     print('Log age:', info['ageSeconds'], 'seconds; identity:', info['observedFirmwareIdentity'])
@@ -154,7 +224,7 @@ def main():
     s.add_argument('--url', required=True)
     s.add_argument('--binary', type=Path, required=True)
     s.add_argument('--manifest', type=Path, required=True)
-    s.add_argument('--name', help='optional new root .bin filename; default includes SHA prefix')
+    s.add_argument('--name', help='optional root .bin filename; default includes device, version and SHA prefix')
     args = parser.parse_args()
     try:
         if args.command == 'collect': collect(args)
