@@ -125,6 +125,20 @@ inline void heap_caps_print_heap_info(uint32_t) { assert(false); }
                     r"auto home = (std::make_unique<HomeActivity>\(.*?std::move\(initialBookPath\)\));"
                     r"\s*replaceActivity\(std::move\(home\)\);",
                     r"replaceActivity(\1);", after, flags=re.S)
+                # V15's sole authorized behavior change is tested dynamically in
+                # test_ble_v15_theme. Reverse only that explicit delta here so
+                # the original whole-source V13 preservation check remains useful.
+                after = after.replace(
+                    "UITheme::getInstance().reload(true);  // Re-apply changes, but retain an unchanged theme's storage.",
+                    "UITheme::getInstance().reload();  // Re-apply theme in case it was changed")
+                after = after.replace("reload(const bool reuseUnchanged)", "reload()")
+                after = after.replace(
+                    "setTheme(CrossPointSettings::UI_THEME type, const bool reuseUnchanged)",
+                    "setTheme(CrossPointSettings::UI_THEME type)")
+                after = after.replace("setTheme(themeType, reuseUnchanged);", "setTheme(themeType);")
+                after = re.sub(
+                    r"if \(!reuseUnchanged \|\| currentMetrics != &\w+Metrics::values\) \{\s*"
+                    r"(currentTheme = std::make_unique<\w+Theme>\(\);)\s*\}", r"\1", after)
                 self.assertEqual(re.sub(r"\s+", "", before), re.sub(r"\s+", "", after))
 
     def test_ble_lifecycle_guards_and_navigation_dependencies_unchanged(self):

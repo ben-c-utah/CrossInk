@@ -63,13 +63,13 @@ UITheme::UITheme() : currentMetrics(&LyraMetrics::values), currentTheme(std::mak
   // main.cpp reloads the saved theme after setup.
 }
 
-void UITheme::reload() {
+void UITheme::reload(const bool reuseUnchanged) {
 #if CROSSINK_HEAP_DIAGNOSTICS
   HeapDiagnostics::snapshot("theme before reload");
   HeapDiagnostics::allocation("theme old", currentTheme.get(), 0);
 #endif
   auto themeType = static_cast<CrossPointSettings::UI_THEME>(SETTINGS.uiTheme);
-  setTheme(themeType);
+  setTheme(themeType, reuseUnchanged);
 #if CROSSINK_HEAP_DIAGNOSTICS
   HeapDiagnostics::allocation("theme new", currentTheme.get(), 0);
   HeapDiagnostics::snapshot("theme after reload");
@@ -93,50 +93,66 @@ bool UITheme::hasCoverGridHome() {
   return SETTINGS.uiTheme == CrossPointSettings::UI_THEME::COVER_GRID && supportsCoverGrid();
 }
 
-void UITheme::setTheme(CrossPointSettings::UI_THEME type) {
+void UITheme::setTheme(CrossPointSettings::UI_THEME type, const bool reuseUnchanged) {
   if (type == CrossPointSettings::UI_THEME::COVER_GRID && !supportsCoverGrid()) {
     type = CrossPointSettings::UI_THEME::LYRA;
   }
   switch (type) {
     case CrossPointSettings::UI_THEME::CLASSIC:
       LOG_DBG("UI", "Using Classic theme");
-      currentTheme = std::make_unique<BaseTheme>();
+      if (!reuseUnchanged || currentMetrics != &BaseMetrics::values) {
+        currentTheme = std::make_unique<BaseTheme>();
+      }
       currentMetrics = &BaseMetrics::values;
       break;
     case CrossPointSettings::UI_THEME::COVER_GRID:
     case CrossPointSettings::UI_THEME::LYRA:
       LOG_DBG("UI", "Using Lyra theme");
-      currentTheme = std::make_unique<LyraTheme>();
+      if (!reuseUnchanged || currentMetrics != &LyraMetrics::values) {
+        currentTheme = std::make_unique<LyraTheme>();
+      }
       currentMetrics = &LyraMetrics::values;
       break;
     case CrossPointSettings::UI_THEME::ROUNDEDRAFF:
       LOG_DBG("UI", "Using RoundedRaff theme");
-      currentTheme = std::make_unique<RoundedRaffTheme>();
+      if (!reuseUnchanged || currentMetrics != &RoundedRaffMetrics::values) {
+        currentTheme = std::make_unique<RoundedRaffTheme>();
+      }
       currentMetrics = &RoundedRaffMetrics::values;
       break;
     case CrossPointSettings::UI_THEME::LYRA_3_COVERS:
       LOG_DBG("UI", "Using Lyra 3 Covers theme");
-      currentTheme = std::make_unique<Lyra3CoversTheme>();
+      if (!reuseUnchanged || currentMetrics != &Lyra3CoversMetrics::values) {
+        currentTheme = std::make_unique<Lyra3CoversTheme>();
+      }
       currentMetrics = &Lyra3CoversMetrics::values;
       break;
     case CrossPointSettings::UI_THEME::LYRA_CAROUSEL:
       LOG_DBG("UI", "Using Lyra Carousel theme");
-      currentTheme = std::make_unique<LyraCarouselTheme>();
+      if (!reuseUnchanged || currentMetrics != &LyraCarouselMetrics::values) {
+        currentTheme = std::make_unique<LyraCarouselTheme>();
+      }
       currentMetrics = &LyraCarouselMetrics::values;
       break;
     case CrossPointSettings::UI_THEME::MINIMAL:
       LOG_DBG("UI", "Using Minimal theme");
-      currentTheme = std::make_unique<MinimalTheme>();
+      if (!reuseUnchanged || currentMetrics != &MinimalMetrics::values) {
+        currentTheme = std::make_unique<MinimalTheme>();
+      }
       currentMetrics = &MinimalMetrics::values;
       break;
     case CrossPointSettings::UI_THEME::DASHBOARD:
       LOG_DBG("UI", "Using Dashboard theme");
-      currentTheme = std::make_unique<DashboardTheme>();
+      if (!reuseUnchanged || currentMetrics != &DashboardMetrics::values) {
+        currentTheme = std::make_unique<DashboardTheme>();
+      }
       currentMetrics = &DashboardMetrics::values;
       break;
     default:
       LOG_ERR("UI", "Unknown theme %d, falling back to Classic", static_cast<int>(type));
-      currentTheme = std::make_unique<BaseTheme>();
+      if (!reuseUnchanged || currentMetrics != &BaseMetrics::values) {
+        currentTheme = std::make_unique<BaseTheme>();
+      }
       currentMetrics = &BaseMetrics::values;
       break;
   }

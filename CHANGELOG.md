@@ -1,3 +1,9 @@
+## [BLE v15-dev experiment] - 2026-10-20
+
+### Changed
+
+- Reuse the effective UI theme when leaving Settings if it has not changed, while refreshing metrics and retaining boot-time replacement. This single-variable Bluetooth memory-recovery experiment requires hardware validation; no fragmentation fix is claimed.
+
 ## [BLE v14-dev diagnostic] - 2026-10-20
 
 ### Added

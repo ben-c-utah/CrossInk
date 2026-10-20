@@ -30,8 +30,10 @@ class UITheme {
   static int drawCenteredWrappedTextAtCenter(const GfxRenderer& renderer, Rect screen, int fontId, int y,
                                              const char* text, int maxLines, bool black = true,
                                              EpdFontFamily::Style style = EpdFontFamily::REGULAR, int lineSpacing = 0);
-  void reload();
-  void setTheme(CrossPointSettings::UI_THEME type);
+  // Settings exit may reuse the effective implementation; ordinary/boot calls
+  // still replace it. Both paths invalidate metrics under the caller's render lock.
+  void reload(bool reuseUnchanged = false);
+  void setTheme(CrossPointSettings::UI_THEME type, bool reuseUnchanged = false);
   static bool supportsCoverGrid();
   static bool hasCoverGridHome();
   static int getNumberOfItemsPerPage(const GfxRenderer& renderer, bool hasHeader, bool hasTabBar, bool hasButtonHints,

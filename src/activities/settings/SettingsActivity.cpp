@@ -907,7 +907,7 @@ void SettingsActivity::onExit() {
   renderer.setOrientation(returnToParentOnClose ? entryOrientation : GfxRenderer::Orientation::Portrait);
   Activity::onExit();
 
-  UITheme::getInstance().reload();  // Re-apply theme in case it was changed
+  UITheme::getInstance().reload(true);  // Re-apply changes, but retain an unchanged theme's storage.
 }
 
 void SettingsActivity::closeRootSettings() {
