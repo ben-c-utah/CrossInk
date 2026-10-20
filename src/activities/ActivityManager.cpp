@@ -990,7 +990,11 @@ void ActivityManager::goToSettings(const bool dismissOnUpSwipe) {
 #if CROSSINK_HEAP_DIAGNOSTICS
   HeapDiagnostics::snapshot("before Settings object construction (Home still alive)");
 #endif
-  auto settings = std::make_unique<SettingsActivity>(renderer, mappedInput, dismissOnUpSwipe);
+  auto settings = makeUniqueNoThrow<SettingsActivity>(renderer, mappedInput, dismissOnUpSwipe);
+  if (!settings) {
+    LOG_ERR("ACT", "Failed to allocate Settings activity");
+    return;
+  }
 #if CROSSINK_HEAP_DIAGNOSTICS
   HeapDiagnostics::snapshot("after Settings object construction (Home still alive)");
 #endif

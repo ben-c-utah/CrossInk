@@ -5,6 +5,7 @@
 #include <HalGPIO.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <WiFi.h>
 
 #include <algorithm>
@@ -267,6 +268,29 @@ std::string trimAsciiSpaces(const std::string& value) {
   return value.substr(start, end - start);
 }
 }  // namespace
+
+void* SettingsActivity::operator new(const std::size_t size, const std::nothrow_t&) noexcept {
+  // One activity-lifetime UI object (~1.7 KB), not DMA/ISR storage. Stack or
+  // static storage cannot serve ActivityManager's independently owned parents.
+  // Do not fall back internally: that would recreate the fragmentation pin.
+#if defined(ARDUINO_ARCH_ESP32) && !defined(SIMULATOR) && FREEINK_FB_PSRAM && CROSSINK_APP_CAP_BLE_PAGE_TURNER
+  auto storage = makePsramByteBufferNoThrow(size);
+#else
+  auto storage = makeHeapByteBufferNoThrow(size);
+#endif
+  if (!storage) LOG_ERR("SET", "Failed to allocate Settings controller (%u bytes)", static_cast<unsigned>(size));
+  // Ownership passes to the activity's unique_ptr; virtual destruction selects
+  // our matching deallocator even when held as unique_ptr<Activity>.
+  return storage.release();
+}
+
+void SettingsActivity::operator delete(void* ptr) noexcept {
+  HeapByteBufferDeleter{}(static_cast<uint8_t*>(ptr));
+}
+
+void SettingsActivity::operator delete(void* ptr, const std::nothrow_t&) noexcept {
+  SettingsActivity::operator delete(ptr);
+}
 
 SettingsActivity::SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const bool dismissOnUpSwipe,
                                    const bool returnToParentOnClose, const View view)

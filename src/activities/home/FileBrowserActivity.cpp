@@ -984,10 +984,16 @@ void FileBrowserActivity::onSettingsEvent(const fui::ActionEvent&, void* user) {
 }
 
 void FileBrowserActivity::openSettings() {
+  auto settings =
+      makeUniqueNoThrow<SettingsActivity>(renderer, mappedInput, false, true, SettingsActivity::View::FileBrowser);
+  if (!settings) {
+    LOG_ERR("FB", "Failed to allocate file browser Settings");
+    return;
+  }
   const std::string selectedEntry =
       entryCount() > 0 && selectorIndex < entryCount() ? entryNameAt(selectorIndex) : std::string();
   startActivityForResult(
-      std::make_unique<SettingsActivity>(renderer, mappedInput, false, true, SettingsActivity::View::FileBrowser),
+      std::move(settings),
       [this, selectedEntry](const ActivityResult&) {
         {
           RenderLock lock(*this);

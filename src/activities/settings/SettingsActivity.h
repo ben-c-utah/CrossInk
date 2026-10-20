@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <functional>
 #include <iterator>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -328,6 +330,13 @@ class SettingsActivity final : public Activity {
   bool isFileBrowserView() const { return view == View::FileBrowser; }
 
  public:
+  // ActivityManager retains this foreground UI controller across Bluetooth
+  // children. Keep its backing allocation out of BLE's internal heap on S3.
+  static void* operator new(std::size_t size, const std::nothrow_t&) noexcept;
+  static void operator delete(void* ptr) noexcept;
+  static void operator delete(void* ptr, const std::nothrow_t&) noexcept;
+  static void* operator new(std::size_t) = delete;  // All entry paths must handle OOM.
+
   explicit SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool dismissOnUpSwipe = false,
                             bool returnToParentOnClose = false, View view = View::Root);
   bool allowGlobalHomeSwipeGesture() const override { return false; }

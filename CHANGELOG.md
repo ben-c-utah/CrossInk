@@ -1,3 +1,9 @@
+## [BLE v13-dev] - 2026-10-19
+
+### Fixed
+
+- Place the retained Settings controller in PSRAM on the PSRAM-equipped Bluetooth target, so navigation while Bluetooth runs cannot leave that controller pinning its internal heap. All Settings entry paths handle allocation failure. Repeated on-device memory recovery remains unverified.
+
 ## [BLE v12-dev] - 2026-10-19
 
 ### Fixed
