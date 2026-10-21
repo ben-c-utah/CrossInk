@@ -7,6 +7,7 @@ storage/factory tests and mechanical rendering-body equivalence checks.
 import hashlib
 from pathlib import Path
 import subprocess
+from v18_source_contract import without_v18
 
 BASELINE = "d830338e418530b9c68cd77dfcee60ef47978894"
 REVIEWED = {'src/activities/home/HomeActivity.cpp': 'd8f6ed46cf7854d08265842bd365a06ac4191fb832edd4368a39e46144da62e9',
@@ -29,6 +30,7 @@ REVIEWED = {'src/activities/home/HomeActivity.cpp': 'd8f6ed46cf7854d08265842bd36
  'src/components/themes/roundedraff/RoundedRaffTheme.h': 'd659b586c674a714ced6e3ad9e720390d5bf8ed8d3e8e465f0786bf1c3207a16'}
 
 def without_v17(name, text):
+    text = without_v18(name, text)
     if name not in REVIEWED:
         return text
     if hashlib.sha256(text.encode()).hexdigest() != REVIEWED[name]:

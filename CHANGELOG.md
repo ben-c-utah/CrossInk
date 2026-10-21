@@ -1,3 +1,9 @@
+## [BLE v18-dev diagnostic experiment] - 2026-10-20
+
+### Changed
+
+- Leave private recent-book entries empty only on the root Settings-return Home to test Bluetooth memory recovery. Boot Home and saved history remain unchanged; the external controller and record storage are retained. This diagnostic candidate requires supervised hardware validation.
+
 ## [BLE v17-dev experiment] - 2026-10-20
 
 ### Changed

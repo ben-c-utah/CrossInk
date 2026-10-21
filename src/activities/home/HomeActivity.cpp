@@ -969,7 +969,9 @@ void HomeActivity::onEnter() {
   const auto& stored = RECENT_BOOKS.getBooks();  // Already loaded above.
   HeapDiagnostics::vectorStorage("global recents", stored.data(), stored.size(), stored.capacity(), sizeof(RecentBook));
 #endif
-  loadRecentBooks(recentBooksToLoad);
+  // V18 diagnostic: only root Settings-return Home owns external record storage.
+  // Keep its preflighted slots empty; do not create even temporary private copies.
+  if (!externalRecentBooks) loadRecentBooks(recentBooksToLoad);
 #if CROSSINK_HEAP_DIAGNOSTICS
   logDiagnosticHome("Home after recent copies", true);
 #endif
